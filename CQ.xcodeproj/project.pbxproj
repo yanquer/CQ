@@ -15,6 +15,11 @@
 		6D40FA782B20AC6200E0142A /* CQTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA772B20AC6200E0142A /* CQTests.swift */; };
 		6D40FA822B20AC6200E0142A /* CQUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA812B20AC6200E0142A /* CQUITests.swift */; };
 		6D40FA842B20AC6200E0142A /* CQUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA832B20AC6200E0142A /* CQUITestsLaunchTests.swift */; };
+		6D40FA922B20AD3A00E0142A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA912B20AD3A00E0142A /* AppDelegate.swift */; };
+		6D40FA942B20AD8C00E0142A /* CreateEventTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA932B20AD8C00E0142A /* CreateEventTap.swift */; };
+		6D40FA972B20AE9400E0142A /* EventInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA962B20AE9400E0142A /* EventInfo.swift */; };
+		6D40FA9B2B20B0A000E0142A /* Command.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA9A2B20B0A000E0142A /* Command.swift */; };
+		6D40FA9E2B20B45E00E0142A /* EventHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D40FA9D2B20B45E00E0142A /* EventHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +52,11 @@
 		6D40FA7D2B20AC6200E0142A /* CQUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CQUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D40FA812B20AC6200E0142A /* CQUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CQUITests.swift; sourceTree = "<group>"; };
 		6D40FA832B20AC6200E0142A /* CQUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CQUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		6D40FA912B20AD3A00E0142A /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		6D40FA932B20AD8C00E0142A /* CreateEventTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateEventTap.swift; sourceTree = "<group>"; };
+		6D40FA962B20AE9400E0142A /* EventInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventInfo.swift; sourceTree = "<group>"; };
+		6D40FA9A2B20B0A000E0142A /* Command.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Command.swift; sourceTree = "<group>"; };
+		6D40FA9D2B20B45E00E0142A /* EventHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventHandler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +107,9 @@
 		6D40FA622B20AC6100E0142A /* CQ */ = {
 			isa = PBXGroup;
 			children = (
+				6D40FA9C2B20B42A00E0142A /* KeyEventHandler */,
+				6D40FA952B20AE7C00E0142A /* common */,
+				6D40FA902B20ACFE00E0142A /* AppDelegates */,
 				6D40FA632B20AC6100E0142A /* CQApp.swift */,
 				6D40FA652B20AC6100E0142A /* ContentView.swift */,
 				6D40FA672B20AC6100E0142A /* Item.swift */,
@@ -130,6 +143,32 @@
 				6D40FA832B20AC6200E0142A /* CQUITestsLaunchTests.swift */,
 			);
 			path = CQUITests;
+			sourceTree = "<group>";
+		};
+		6D40FA902B20ACFE00E0142A /* AppDelegates */ = {
+			isa = PBXGroup;
+			children = (
+				6D40FA912B20AD3A00E0142A /* AppDelegate.swift */,
+				6D40FA932B20AD8C00E0142A /* CreateEventTap.swift */,
+			);
+			path = AppDelegates;
+			sourceTree = "<group>";
+		};
+		6D40FA952B20AE7C00E0142A /* common */ = {
+			isa = PBXGroup;
+			children = (
+				6D40FA962B20AE9400E0142A /* EventInfo.swift */,
+				6D40FA9A2B20B0A000E0142A /* Command.swift */,
+			);
+			path = common;
+			sourceTree = "<group>";
+		};
+		6D40FA9C2B20B42A00E0142A /* KeyEventHandler */ = {
+			isa = PBXGroup;
+			children = (
+				6D40FA9D2B20B45E00E0142A /* EventHandler.swift */,
+			);
+			path = KeyEventHandler;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -262,8 +301,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6D40FA972B20AE9400E0142A /* EventInfo.swift in Sources */,
+				6D40FA922B20AD3A00E0142A /* AppDelegate.swift in Sources */,
 				6D40FA662B20AC6100E0142A /* ContentView.swift in Sources */,
 				6D40FA682B20AC6100E0142A /* Item.swift in Sources */,
+				6D40FA9B2B20B0A000E0142A /* Command.swift in Sources */,
+				6D40FA9E2B20B45E00E0142A /* EventHandler.swift in Sources */,
+				6D40FA942B20AD8C00E0142A /* CreateEventTap.swift in Sources */,
 				6D40FA642B20AC6100E0142A /* CQApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
