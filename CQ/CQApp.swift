@@ -10,23 +10,14 @@ import SwiftData
 
 @main
 struct CQApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+    
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        Settings {
+            VStack{
+                SettingFormView().frame(width: 300, height: 200).padding(10)
+            }
         }
-        .modelContainer(sharedModelContainer)
     }
 }
