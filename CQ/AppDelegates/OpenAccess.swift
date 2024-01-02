@@ -15,11 +15,16 @@ extension AppDelegate {
         _ = ShellCommand.exec(cmds: ["-c", openAccessSymbol])
     }
     
+    static func hasAccess() -> Bool{
+        return AXIsProcessTrusted()
+    }
+    
     static func hasAccessAndGain() -> Bool{
+        // 自动尝试获取, 有个bug, 就是不能一直 restartCQ
         if AXIsProcessTrusted(){ return true }
         
         openAccessSettings()
-        restartCQ()
+        // restartCQ()
         
         return false
     }
