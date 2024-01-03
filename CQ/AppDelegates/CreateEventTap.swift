@@ -4,6 +4,8 @@
 //
 //  Created by 烟雀 on 2023/12/6.
 //
+//  创建事件截取
+//
 
 import Foundation
 import AppKit
@@ -27,10 +29,10 @@ extension AppDelegate {
                         eventType: cgEventType, 
                         info: _info,
                         proxy: proxy){
-                        print("成功触发eventPass但是没有comdq")
+                        // print("成功触发eventPass但是没有comdq")
                         return .passUnretained(cgEvent)
                     } else {
-                        print("comdq")
+                        // print("comdq")
                         return nil
                     }
                 }

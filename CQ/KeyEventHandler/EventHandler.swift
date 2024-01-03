@@ -15,7 +15,7 @@ class EventHandler{
     
     static func eventPass(event: CGEvent, eventType: CGEventType, info: EventInfo?, proxy: CGEventTapProxy) -> Bool {
         
-        print(eventType.self, eventType.rawValue)
+        // print(eventType.self, eventType.rawValue)
         
         switch eventType {
         case .keyDown:
@@ -31,7 +31,7 @@ class EventHandler{
     static func eventKeyIsCommandQ(event: CGEvent) -> Bool{
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
-        print(keyCode, "+" ,flags)
+        // print(keyCode, "+" ,flags)
         if keyCode == 12 && flags.contains(.maskCommand) {return true}
         
         return false
@@ -43,7 +43,7 @@ class EventHandler{
             
             if (info?.touchTime==0){
                 info?.setOneTouch(timer: Double(info?.dobulueClickTime ?? 3))
-//                info?.alertStr = "请再点击一次cmd + q以退出"
+                // info?.alertStr = "请再点击一次cmd + q以退出"
                 self._tipView?.close()
                 _tipView = TipView(alertText: "请再点击一次 CMD+Q 以退出").showViewOnNewWindowInSpecificTime(during: CGFloat(info?.alterWinCloseTime ?? 3))
             } else if (info?.touchTime==1) {

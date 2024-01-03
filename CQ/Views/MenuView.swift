@@ -10,6 +10,8 @@ import SwiftUI
 
 struct MenuView: View {
     
+    private let info = EventInfo.currentEventInfo()
+    
     @State private var keyMapWindow: NSWindow?
     
     @State
@@ -92,10 +94,11 @@ struct MenuView: View {
         
         HStack {
             Button(action: {
-                NSApplication.shared.terminate(self)
+                updateClickTime()
+                updateAlertCloseTime()
             }, label: {
-                Text("Quit")
-                    .foregroundColor(.black)
+                Text("应用")
+                    .foregroundColor(.yellow)
             })
             .background(content: {
                 Color.green
@@ -103,7 +106,21 @@ struct MenuView: View {
             .padding(.top, 15.0)
             .padding(.bottom, 10.0)
             .cornerRadius(100)
-            .frame(width: 240, alignment: .trailing)
+            .frame(width: 120, alignment: .leading)
+            
+            Button(action: {
+                NSApplication.shared.terminate(self)
+            }, label: {
+                Text("退出")
+                    .foregroundColor(.yellow)
+            })
+            .background(content: {
+                Color.green
+            })
+            .padding(.top, 15.0)
+            .padding(.bottom, 10.0)
+            .cornerRadius(100)
+            .frame(width: 120, alignment: .trailing)
         }
         
     }
@@ -111,15 +128,14 @@ struct MenuView: View {
 }
 
 
-private extension MenuView {
+extension MenuView{
     
-    enum TextString {
-        static let alertText: LocalizedStringKey = "Alert_Title"
-        static let mouseText: LocalizedStringKey = "Mouse_Wheel_Title"
-        static let keyMapText: LocalizedStringKey = "Key_Mapper_Title"
-        static let alertDesc: LocalizedStringKey = "Alert_Desc"
-        static let mouseDesc: LocalizedStringKey = "Mouse_Wheel_Desc"
-        static let keyMapDesc: LocalizedStringKey = "Key_Mapper_Desc"
+    func updateClickTime(){
+        info.dobulueClickTime = Int(self._doblueClickTime)
+    }
+    
+    func updateAlertCloseTime(){
+        info.alterWinCloseTime = Int(self._alertTime)
     }
 }
 

@@ -24,7 +24,8 @@ extension TipView{
     private func displayAsAlert(win:NSWindow, Timer:Double) {
         
         // 在当前窗口上显示
-        win.level = .popUpMenu
+        // win.level = .floating
+    
         
         // 设置透明
         // win.isOpaque = false
@@ -43,6 +44,8 @@ extension TipView{
         win.styleMask.remove(.resizable)
         win.backgroundColor = NSColor.clear
         win.orderFrontRegardless()
+        
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + Timer) {
             win.close()
         }

@@ -26,40 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         AppDelegate.createEventTap()
         
-        
-        // 显示状态栏
-//        NSApplication.shared.presentationOptions.insert(.autoHideMenuBar)
-//        self.setStatusBar()
         makeMenuButton()
     }
-    
-    
-//    var statusBarItem: NSStatusItem?
-//    func setStatusBar(){
-//        // 创建状态栏项目
-//        statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-//
-//        // 设置状态栏项目的外观
-//        if let button = statusBarItem?.button {
-//            button.image = NSImage(systemSymbolName: "sun.max", accessibilityDescription: nil)
-//            button.action = #selector(togglePopover(_:))
-//        }
-//    }
-//    
-//    var popover: NSPopover?
-//    @objc func togglePopover(_ sender: AnyObject?) {
-//        if popover == nil {
-//            // 创建并显示 NSPopover
-//            popover = NSPopover()
-//            popover?.contentViewController = NSHostingController(rootView: SettingFormView())
-//            popover?.show(relativeTo: statusBarItem!.button!.bounds, of: statusBarItem!.button!, preferredEdge: .minY)
-//        } else {
-//            // 隐藏 NSPopover
-//            popover?.performClose(sender)
-//            popover = nil
-//        }
-//    }
-
     
 }
 

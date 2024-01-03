@@ -4,6 +4,8 @@
 //
 //  Created by 烟雀 on 2023/12/6.
 //
+// 打开辅助功能
+//
 
 import Foundation
 import Cocoa
