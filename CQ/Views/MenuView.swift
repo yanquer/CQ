@@ -19,6 +19,9 @@ struct MenuView: View {
     @State
     private var _alertTime = Float64(EventInfo.currentEventInfo().alterWinCloseTime)
     
+    @State
+    private var _startAtLogin = AutoLaunch.isEnabledAutoLaunch
+    
     var body: some View {
         
         VStack( alignment: .leading, spacing: 0) {
@@ -34,6 +37,22 @@ struct MenuView: View {
                 .padding(.horizontal, 10.0)
                 .frame(width: 300)
         
+            Toggle(isOn: $_startAtLogin){
+                Text("登陆时启动")
+            }
+                .padding()
+                .onChange(of: _startAtLogin, initial: false) { (oldValue, newValue) in
+                    if newValue {
+                        AutoLaunch.enableAutoLaunch()
+                    } else {
+                        AutoLaunch.disableAutoLaunch()
+                    }
+                    // _startAtLogin = newValue
+                }
+            
+            Divider()
+                .padding(.horizontal, 10.0)
+                .frame(width: 300)
             
             Group {
                 HStack(
@@ -98,10 +117,7 @@ struct MenuView: View {
                 updateAlertCloseTime()
             }, label: {
                 Text("应用")
-                    .foregroundColor(.yellow)
-            })
-            .background(content: {
-                Color.green
+                    // .foregroundColor(.yellow)
             })
             .padding(.top, 15.0)
             .padding(.bottom, 10.0)
@@ -112,10 +128,7 @@ struct MenuView: View {
                 NSApplication.shared.terminate(self)
             }, label: {
                 Text("退出")
-                    .foregroundColor(.yellow)
-            })
-            .background(content: {
-                Color.green
+                    // .foregroundColor(.yellow)
             })
             .padding(.top, 15.0)
             .padding(.bottom, 10.0)

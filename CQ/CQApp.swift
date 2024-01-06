@@ -16,7 +16,7 @@ struct CQApp: App {
     var body: some Scene {
         Settings {
             VStack{
-                SettingFormView().frame(width: 300, height: 200).padding(10)
+
             }
         }
     }

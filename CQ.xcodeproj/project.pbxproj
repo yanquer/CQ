@@ -25,9 +25,10 @@
 		6D89FD0F2B43E512001FDDEB /* MenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89FD0E2B43E512001FDDEB /* MenuButton.swift */; };
 		6D89FD112B43E59D001FDDEB /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89FD102B43E59D001FDDEB /* MenuView.swift */; };
 		6D89FD142B456224001FDDEB /* AutoLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89FD132B456224001FDDEB /* AutoLaunch.swift */; };
+		6D8EC7C72B49A6EC00AA1580 /* README.rst in Resources */ = {isa = PBXBuildFile; fileRef = 6D8EC7C62B49A6EC00AA1580 /* README.rst */; };
+		6D8EC7C92B49A80C00AA1580 /* CHANGELOG.rst in Resources */ = {isa = PBXBuildFile; fileRef = 6D8EC7C82B49A80C00AA1580 /* CHANGELOG.rst */; };
 		6DA295D42B248D1A0017735C /* TipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA295D32B248D1A0017735C /* TipView.swift */; };
 		6DCF6EFD2B42F90100361F4C /* BaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DCF6EFC2B42F90100361F4C /* BaseView.swift */; };
-		6DCF6EFF2B43057200361F4C /* SettingFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DCF6EFE2B43057200361F4C /* SettingFormView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,9 +72,10 @@
 		6D89FD102B43E59D001FDDEB /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		6D89FD122B455A42001FDDEB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6D89FD132B456224001FDDEB /* AutoLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoLaunch.swift; sourceTree = "<group>"; };
+		6D8EC7C62B49A6EC00AA1580 /* README.rst */ = {isa = PBXFileReference; lastKnownFileType = file; path = README.rst; sourceTree = SOURCE_ROOT; };
+		6D8EC7C82B49A80C00AA1580 /* CHANGELOG.rst */ = {isa = PBXFileReference; lastKnownFileType = file; path = CHANGELOG.rst; sourceTree = SOURCE_ROOT; };
 		6DA295D32B248D1A0017735C /* TipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TipView.swift; sourceTree = "<group>"; };
 		6DCF6EFC2B42F90100361F4C /* BaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseView.swift; sourceTree = "<group>"; };
-		6DCF6EFE2B43057200361F4C /* SettingFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingFormView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +126,9 @@
 		6D40FA622B20AC6100E0142A /* CQ */ = {
 			isa = PBXGroup;
 			children = (
+				6D8EC7C82B49A80C00AA1580 /* CHANGELOG.rst */,
+				6D8EC7C62B49A6EC00AA1580 /* README.rst */,
+				6D8EC7C52B4995E000AA1580 /* StartAtLogin */,
 				6D89FD122B455A42001FDDEB /* Info.plist */,
 				6DA295D22B248D0D0017735C /* Views */,
 				6D40FA9C2B20B42A00E0142A /* KeyEventHandler */,
@@ -171,7 +176,6 @@
 				6D40FA932B20AD8C00E0142A /* CreateEventTap.swift */,
 				6D40FA9F2B20C31000E0142A /* OpenAccess.swift */,
 				6D89FD0E2B43E512001FDDEB /* MenuButton.swift */,
-				6D89FD132B456224001FDDEB /* AutoLaunch.swift */,
 			);
 			path = AppDelegates;
 			sourceTree = "<group>";
@@ -193,12 +197,19 @@
 			path = KeyEventHandler;
 			sourceTree = "<group>";
 		};
+		6D8EC7C52B4995E000AA1580 /* StartAtLogin */ = {
+			isa = PBXGroup;
+			children = (
+				6D89FD132B456224001FDDEB /* AutoLaunch.swift */,
+			);
+			name = StartAtLogin;
+			sourceTree = "<group>";
+		};
 		6DA295D22B248D0D0017735C /* Views */ = {
 			isa = PBXGroup;
 			children = (
 				6DA295D32B248D1A0017735C /* TipView.swift */,
 				6DCF6EFC2B42F90100361F4C /* BaseView.swift */,
-				6DCF6EFE2B43057200361F4C /* SettingFormView.swift */,
 				6D89FD0C2B43B4D3001FDDEB /* NoAccessView.swift */,
 				6D89FD102B43E59D001FDDEB /* MenuView.swift */,
 			);
@@ -309,7 +320,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6D8EC7C92B49A80C00AA1580 /* CHANGELOG.rst in Resources */,
 				6D40FA6D2B20AC6200E0142A /* Preview Assets.xcassets in Resources */,
+				6D8EC7C72B49A6EC00AA1580 /* README.rst in Resources */,
 				6D40FA6A2B20AC6200E0142A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -336,7 +349,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				6D40FA972B20AE9400E0142A /* EventInfo.swift in Sources */,
-				6DCF6EFF2B43057200361F4C /* SettingFormView.swift in Sources */,
 				6D89FD0F2B43E512001FDDEB /* MenuButton.swift in Sources */,
 				6D40FAA02B20C31000E0142A /* OpenAccess.swift in Sources */,
 				6D40FA922B20AD3A00E0142A /* AppDelegate.swift in Sources */,
@@ -513,6 +525,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CQ/CQ.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -531,7 +544,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yanque.CQ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -545,6 +558,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CQ/CQ.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -563,7 +577,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yanque.CQ;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
