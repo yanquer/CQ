@@ -39,6 +39,9 @@ struct MenuView: View {
         
             Toggle(isOn: $_startAtLogin){
                 Text("登陆时启动")
+                    .fontWeight(.medium)
+                    .padding(.top, 5.0)
+                    .frame(width: 200, alignment: .leading)
             }
                 .padding()
                 .onChange(of: _startAtLogin, initial: false) { (oldValue, newValue) in
@@ -57,7 +60,7 @@ struct MenuView: View {
             Group {
                 HStack(
                     spacing: 0){
-                        Image(systemName: "magicmouse")
+                        Image(systemName: "gear")
                             .padding(.top, 15.0)
                             .padding(.leading, 15.0)
                             .frame(width: 40, alignment: .leading)
@@ -85,7 +88,7 @@ struct MenuView: View {
             Group {
                 HStack(
                     spacing: 0) {
-                        Image(systemName: "keyboard")
+                        Image(systemName: "gear")
                             .padding(.top, 15.0)
                             .padding(.leading, 15.0)
                             .frame(width: 40, alignment: .leading)
