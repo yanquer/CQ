@@ -21,9 +21,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // }
         
         if !AppDelegate.hasAccess(){
+            #if DEBUG
+            print("没有获取到辅助权限, 请清理后手动获取")
+            #else
             // 打开请求辅助权限窗口
             let _ = NoAccessView().openInWindow(title: "CQ请求授权", sender: self)
+            #endif
         }
+            
         AppDelegate.createEventTap()
         
         makeMenuButton()
