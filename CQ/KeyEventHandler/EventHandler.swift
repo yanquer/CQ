@@ -28,14 +28,17 @@ class EventHandler{
         
     }
     
-    static func eventKeyIsCommandQ(event: CGEvent) -> Bool{
+    static func eventKeyIsCommandQ(event: CGEvent, containEnter: Bool = false) -> Bool{
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
         print(keyCode, "+" ,flags)
         // 如果很快按下, 这个会检测不到, 因为Mac貌似默认会认为快速点击为按下
         // 导致 flags 变成 CGEventFlags(rawValue: 256)
         // 手动判断一下轻按也当作抬起处理
-        return isCmdQ(keyCode: keyCode, flags: flags) || isCmdQEnter(keyCode: keyCode, flags: flags)
+        if containEnter{
+            return isCmdQ(keyCode: keyCode, flags: flags) || isCmdQEnter(keyCode: keyCode, flags: flags)
+        }
+        return isCmdQ(keyCode: keyCode, flags: flags)
     }
     
     static func isCmdQ(keyCode: Int64, flags: CGEventFlags) -> Bool{
@@ -48,28 +51,27 @@ class EventHandler{
     }
     
     static let _initEnterFlag = -1.0
+    static var _isLongEnterEvent = false        // 是否长按事件
     static var firstEnterTime = _initEnterFlag
     static func eventKeyDown(event: CGEvent, info: EventInfo?) -> Bool{
         if eventKeyIsCommandQ(event: event){
             print("command + q down, trriggle")
+            let now = NSDate().timeIntervalSince1970 * 1000
             if (firstEnterTime == _initEnterFlag){
-                firstEnterTime = NSDate().timeIntervalSince1970 * 1000
+                firstEnterTime = now
+            } else if (!_isLongEnterEvent){
+                // 间隔时间小于700ms, 说明是长按事件, 跳过
+                _isLongEnterEvent = now - firstEnterTime < 700
             }
             
-            let now = NSDate().timeIntervalSince1970 * 1000
-            // 间隔时间小于300ms, 说明是长按事件, 跳过
-            print("====s=====>")
-            print("====s=====>")
-            print(now)
-            print(firstEnterTime)
-            print(now - firstEnterTime)
-            print("====n=====>")
-            print("====n=====>")
-            if (firstEnterTime == _initEnterFlag){
-                firstEnterTime = now
-            } else if (now - firstEnterTime < 300){
-                print("长按事件, 跳过")
-                firstEnterTime = now
+            // 实际测试发现, 长按第二次触发的间隔在 500 ms 左右, 为了兼容慢点的电脑, 上方姑且使用 700 作为界限
+            // 但是不知道为什么, 第三次触发后间隔均小于 100ms, 本机测试在 83ms 左右
+            // print(now - firstEnterTime)
+            // firstEnterTime = now
+            
+            if _isLongEnterEvent{
+                self._tipView?.close()
+                _tipView = TipView(alertText: "检测到为长按事件, 忽略").showViewOnNewWindowInSpecificTime(during: 1)
                 return true
             }
             
@@ -92,9 +94,11 @@ class EventHandler{
     }
     
     static func eventKeyUp(event: CGEvent, info: EventInfo?) -> Bool{
-        if eventKeyIsCommandQ(event: event){
+        // 按下的事件, 仅抬起时候做检测
+        if eventKeyIsCommandQ(event: event, containEnter: true){
             print("command + q up, trriggle")
             firstEnterTime = _initEnterFlag
+            _isLongEnterEvent = false
             return true
             
             // todo: 触发一个view, 比如超时Dialog动画, 动画时间内结束就返回空, 表示拦截这个事件
