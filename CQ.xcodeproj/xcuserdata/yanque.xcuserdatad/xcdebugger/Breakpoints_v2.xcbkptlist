@@ -18,38 +18,6 @@
             endingLineNumber = "23"
             landmarkName = "AutoLaunch"
             landmarkType = "3">
-            <Locations>
-               <Location
-                  uuid = "898DE61C-BD71-44F2-9D13-5BA4D9A2DF1F - defa1e55790f89a1"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "one-time initialization function for loginItem"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "23"
-                  endingLineNumber = "23"
-                  offsetFromSymbolStart = "8">
-               </Location>
-               <Location
-                  uuid = "898DE61C-BD71-44F2-9D13-5BA4D9A2DF1F - 58f1e4d5bda06ed3"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "CQ.AutoLaunch.loginItem.unsafeMutableAddressor : __C.SMAppService"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "23"
-                  endingLineNumber = "23"
-                  offsetFromSymbolStart = "4">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -66,38 +34,6 @@
             endingLineNumber = "27"
             landmarkName = "isEnabledAutoLaunch"
             landmarkType = "24">
-            <Locations>
-               <Location
-                  uuid = "CB5F27A0-7E69-4B5B-9149-32641985B56C - a597bb00665e6c26"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.enableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "26"
-                  endingLineNumber = "26"
-                  offsetFromSymbolStart = "58">
-               </Location>
-               <Location
-                  uuid = "CB5F27A0-7E69-4B5B-9149-32641985B56C - 8ec3af556b55ae7a"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.isEnabledAutoLaunch.getter : Swift.Bool"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "26"
-                  endingLineNumber = "26"
-                  offsetFromSymbolStart = "37">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -130,38 +66,6 @@
             endingLineNumber = "33"
             landmarkName = "enableAutoLaunch()"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "CC31DB25-A030-4649-80A5-3002F0E2467F - a597bb00665e6fe0"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.enableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "32"
-                  endingLineNumber = "32"
-                  offsetFromSymbolStart = "115">
-               </Location>
-               <Location
-                  uuid = "CC31DB25-A030-4649-80A5-3002F0E2467F - a597bb00665e6f1f"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.enableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "33"
-                  endingLineNumber = "33"
-                  offsetFromSymbolStart = "115">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -178,38 +82,6 @@
             endingLineNumber = "35"
             landmarkName = "enableAutoLaunch()"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "3FED5EAD-8DAC-4172-A9E2-CD3DF9125176 - a597bb00665e6f3e"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.enableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "34"
-                  endingLineNumber = "34"
-                  offsetFromSymbolStart = "412">
-               </Location>
-               <Location
-                  uuid = "3FED5EAD-8DAC-4172-A9E2-CD3DF9125176 - a597bb00665e6f5d"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.enableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "35"
-                  endingLineNumber = "35"
-                  offsetFromSymbolStart = "412">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -226,38 +98,6 @@
             endingLineNumber = "45"
             landmarkName = "disableAutoLaunch()"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "63046D4C-35C0-44F9-9E0C-AC3D0ABA6490 - 18357a737c589fda"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.disableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "44"
-                  endingLineNumber = "44"
-                  offsetFromSymbolStart = "410">
-               </Location>
-               <Location
-                  uuid = "63046D4C-35C0-44F9-9E0C-AC3D0ABA6490 - 18357a737c58803d"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.disableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "45"
-                  endingLineNumber = "45"
-                  offsetFromSymbolStart = "410">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -274,38 +114,70 @@
             endingLineNumber = "43"
             landmarkName = "disableAutoLaunch()"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "9F1A36AF-5D4D-463A-8176-011218E400E2 - 18357a737c589f98"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.disableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "42"
-                  endingLineNumber = "42"
-                  offsetFromSymbolStart = "113">
-               </Location>
-               <Location
-                  uuid = "9F1A36AF-5D4D-463A-8176-011218E400E2 - 18357a737c589ffb"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "static CQ.AutoLaunch.disableAutoLaunch() -&gt; ()"
-                  moduleName = "CQ"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/yanque/Project/Code/Xcode/cq/CQ/AutoLaunch.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "43"
-                  endingLineNumber = "43"
-                  offsetFromSymbolStart = "113">
-               </Location>
-            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "9C0B8C68-5AAF-44D9-8796-B1D30AB6B477"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "CQ/BlackList/AppBlack.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "61"
+            endingLineNumber = "61"
+            landmarkName = "getAllInstallApps(refresh:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "686FF2CC-96C5-415D-A385-172364BD8012"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "CQ/BlackList/AppBlack.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "62"
+            endingLineNumber = "62"
+            landmarkName = "getAllInstallApps(refresh:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "4D64202C-E952-4C15-93ED-01CC476BCE14"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "CQ/Views/MenuSetting/BlackView.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "27"
+            endingLineNumber = "27"
+            landmarkName = "body"
+            landmarkType = "24">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "675D9380-4B31-4A3B-BE72-53F25F54955F"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "CQ/GlobalCache/BlackCache.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "35"
+            endingLineNumber = "35"
+            landmarkName = "cache()"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>

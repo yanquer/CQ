@@ -50,10 +50,24 @@ class EventHandler{
         return keyCode == 12 && flags.contains(CGEventFlags(rawValue: 256))
     }
     
+    static func isInBlackList() -> Bool{
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            let appName = frontApp.localizedName ?? "Unknown"
+            print("当前前台应用程序是：\(appName)")
+        }
+        
+        return false
+    }
+    
     static let _initEnterFlag = -1.0
     static var _isLongEnterEvent = false        // 是否长按事件
     static var firstEnterTime = _initEnterFlag
     static func eventKeyDown(event: CGEvent, info: EventInfo?) -> Bool{
+        
+        if isInBlackList(){
+            return true
+        }
+        
         if eventKeyIsCommandQ(event: event){
             print("command + q down, trriggle")
             let now = NSDate().timeIntervalSince1970 * 1000

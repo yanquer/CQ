@@ -25,17 +25,7 @@ struct MenuView: View {
     var body: some View {
         
         VStack( alignment: .leading, spacing: 0) {
-            Text("CQ")
-                .font(Font.system(size: 15.0))
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, 15.0)
-                .padding(.top, 15.0)
-                .padding(.bottom, 15.0)
             
-            Divider()
-                .padding(.horizontal, 10.0)
-                .frame(width: 300)
         
             Toggle(isOn: $_startAtLogin){
                 Text("登陆时启动")
