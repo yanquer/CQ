@@ -27,6 +27,7 @@ extension View{
     
     private func setCommonWinAttr(win: NSWindow){
         win.isMovableByWindowBackground = true
+        // 控件头 透明
         win.titlebarAppearsTransparent = true
         // 允许在所有桌面空间
         win.collectionBehavior = .canJoinAllSpaces
@@ -69,6 +70,7 @@ extension View{
         // win.alphaValue = 0.1
         
         self.setCommonWinAttr(win: win)
+        win.isMovableByWindowBackground = false
         win.titleVisibility = .hidden
         win.styleMask.remove(.closable)
 
