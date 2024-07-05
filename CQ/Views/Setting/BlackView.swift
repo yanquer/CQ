@@ -72,7 +72,7 @@ struct BlackView: View {
                     HStack(spacing: 0) {
                         CButton(text: "+", action: {
                             FileSelector.openFile(selectApp: {appPath in
-                                print("select \(appPath!)")
+                                AppLog.info("select \(appPath!)")
                                 whitelistObj.append(data: appPath!.path)
                             })
                         }, bgColor: Color.clear)

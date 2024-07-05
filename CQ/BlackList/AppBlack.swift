@@ -15,8 +15,9 @@ class AppBlack{
     
     static private func currentFoucApp() -> String?{
         if let frontApp = NSWorkspace.shared.frontmostApplication {
+            // frontApp.bundleURL
             let appName = frontApp.localizedName ?? "Unknown"
-            print("当前前台应用程序是：\(appName)")
+            // AppLog.info("当前前台应用程序是：\(appName)")
             return appName
         }
         return nil
@@ -45,7 +46,7 @@ class AppBlack{
                             appURLs.append(fileURL)
                         }
                     } catch {
-                        print("Error retrieving resource values for \(fileURL): \(error)")
+                        AppLog.info("Error retrieving resource values for \(fileURL): \(error)")
                     }
                 }
             }
@@ -60,7 +61,7 @@ class AppBlack{
         if (refresh || self.cacheBlack.isEmpty){
             let installedApps = AppBlack.getAllInstalledApps()
             installedApps.forEach {
-                print($0.path)
+                AppLog.info($0.path)
                 self.cacheBlack.append($0.path)
             }
         }
@@ -81,8 +82,24 @@ class AppBlack{
 //        return self.cacheAppBlack
 //        
 //    }
-//    
+//
     
+    
+    func curAppInBlackList() -> Bool{
+        if let curApp = AppBlack.currentFoucApp(){
+            AppLog.info("检查\(curApp)是否需跳过")
+            let blackList = BlackList.this.records
+            for one in blackList {
+                let _path = curApp + ".app"
+                if one.hasSuffix(_path){
+                    AppLog.info("跳过\(curApp)")
+                    return true
+                }
+            }
+        }
+        
+        return false
+    }
     
     
     

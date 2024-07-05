@@ -16,7 +16,7 @@ extension AppDelegate{
         popOver.behavior = .transient
         popOver.animates = true
         popOver.contentViewController = NSViewController()
-        popOver.contentViewController?.view = NSHostingView(rootView: SettingView())
+        popOver.contentViewController?.view = NSHostingView(rootView: MenuShowView())
         popOver.contentSize = NSSize(width: 360, height: 800)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let menuButton = statusItem?.button{

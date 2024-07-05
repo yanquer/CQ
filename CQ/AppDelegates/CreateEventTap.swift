@@ -21,33 +21,35 @@ extension AppDelegate {
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(interestEventType),
-            callback: { proxy, cgEventType, cgEvent, ctx in
+            callback: { (proxy, cgEventType, cgEvent, ctx) -> Unmanaged<CGEvent>? in
         
-                if let _info = ctx?.load(as: EventInfo.self) {
+                // if let _info = ctx?.load(as: EventInfo.self) {}
+                if (ctx != nil){
                     if EventHandler.eventPass(
                         event: cgEvent,
-                        eventType: cgEventType, 
-                        info: _info,
+                        eventType: cgEventType,
+                        infoPointer: ctx,
                         proxy: proxy){
-                        // print("成功触发eventPass但是没有comdq")
+                        // AppLog.info("成功触发eventPass但是没有comdq")
                         return .passUnretained(cgEvent)
                     } else {
-                        // print("comdq")
+                        // AppLog.info("comdq")
                         return nil
                     }
                 }
-                
-//                print("===半成功触发handle")
+                // AppLog.info("===半成功触发handle")
                 // 底层自己回收
                 return .passUnretained(cgEvent)
             },
-            userInfo: &info){
+            // userInfo: &info
+            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(info).toOpaque())
+        ){
             
             RunLoop.current.add(tapEvent, forMode: .common)
             CGEvent.tapEnable(tap: tapEvent, enable: true)
         } else {
             
-            print("创建event tap失败")
+            AppLog.info("创建event tap失败")
         }
     }
 

@@ -13,17 +13,21 @@ class EventHandler{
     
     static var _tipView: NSWindow?
     
-    static func eventPass(event: CGEvent, eventType: CGEventType, info: EventInfo?, proxy: CGEventTapProxy) -> Bool {
+    static func getInfo(infoPointer: UnsafeMutableRawPointer?) -> EventInfo{
+        return Unmanaged<EventInfo>.fromOpaque(infoPointer!).takeUnretainedValue()
+    }
+    
+    static func eventPass(event: CGEvent, eventType: CGEventType, infoPointer: UnsafeMutableRawPointer?, proxy: CGEventTapProxy) -> Bool {
         
-        // print(eventType.self, eventType.rawValue)
+        // AppLog.info(eventType.self, eventType.rawValue)
         
         switch eventType {
-        case .keyDown:
-            return eventKeyDown(event: event, info: info)
-        case .keyUp:
-            return eventKeyUp(event: event, info: info)
-        default:
-            return true
+            case .keyDown:
+                return eventKeyDown(event: event, info: getInfo(infoPointer: infoPointer))
+            case .keyUp:
+                return eventKeyUp(event: event, info: getInfo(infoPointer: infoPointer))
+            default:
+                return true
         }
         
     }
@@ -51,12 +55,7 @@ class EventHandler{
     }
     
     static func isInBlackList() -> Bool{
-        if let frontApp = NSWorkspace.shared.frontmostApplication {
-            let appName = frontApp.localizedName ?? "Unknown"
-            print("当前前台应用程序是：\(appName)")
-        }
-        
-        return false
+        return AppBlack.this.curAppInBlackList()
     }
     
     static let _initEnterFlag = -1.0
@@ -80,7 +79,7 @@ class EventHandler{
             
             // 实际测试发现, 长按第二次触发的间隔在 500 ms 左右, 为了兼容慢点的电脑, 上方姑且使用 700 作为界限
             // 但是不知道为什么, 第三次触发后间隔均小于 100ms, 本机测试在 83ms 左右
-            // print(now - firstEnterTime)
+            // AppLog.info(now - firstEnterTime)
             // firstEnterTime = now
             
             if _isLongEnterEvent{
@@ -98,7 +97,7 @@ class EventHandler{
             } else if (info?.touchTime==1) {
                 info?.reset()
                 self._tipView?.close()
-                print("允许正常退出")
+                AppLog.info("允许正常退出")
                 return true
             }
             
@@ -110,7 +109,7 @@ class EventHandler{
     static func eventKeyUp(event: CGEvent, info: EventInfo?) -> Bool{
         // 按下的事件, 仅抬起时候做检测
         if eventKeyIsCommandQ(event: event, containEnter: true){
-            print("command + q up, trriggle")
+            // AppLog.info("command + q up, trriggle")
             firstEnterTime = _initEnterFlag
             _isLongEnterEvent = false
             return true

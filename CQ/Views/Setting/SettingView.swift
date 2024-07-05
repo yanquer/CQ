@@ -18,7 +18,7 @@ struct SettingView: View{
     var body: some View {
         VStack {
             
-            Text("CQ")
+            Text("CQ设置")
                 .font(Font.system(size: 15.0))
                 .fontWeight(.semibold)
                 .multilineTextAlignment(.leading)

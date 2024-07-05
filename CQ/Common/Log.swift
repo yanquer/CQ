@@ -9,16 +9,18 @@ import Foundation
 import os.log
 
 struct AppLog{
+    static let logCq = OSLog(subsystem: "com.yq.cq", category: "util")
+    
     static func info(_ data: String){
-        os_log(.info, "\(data)")
+        os_log(.info, log: logCq, "\(data)")
     }
     
     static func debug(_ data: String){
-        os_log(.debug, "\(data)")
+        os_log(.debug, log: logCq, "\(data)")
     }
     
     static func error(_ data: String){
-        os_log(.error, "\(data)")
+        os_log(.error, log: logCq, "\(data)")
     }
 }
 

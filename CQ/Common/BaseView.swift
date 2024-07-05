@@ -8,25 +8,50 @@
 import Foundation
 import SwiftUI
 
-extension TipView{
+
+extension View{
     
     // MARK: - Interface
     
-    func showViewOnNewWindowInSpecificTime(during timer: CGFloat) -> NSWindow {
+    func showViewOnNewWindow(title: String) -> NSWindow {
         let alertWindow = self.setWindow()
-        displayAsAlert(win: alertWindow, Timer: timer)
+        displayAsMainWin(win: alertWindow, title: title)
         return alertWindow
     }
     
+    func showViewOnNewWindowInSpecificTime(during timer: CGFloat) -> NSWindow {
+        let alertWindow = self.setWindow()
+        displayAsAlert(win: alertWindow, timer: timer)
+        return alertWindow
+    }
+    
+    private func displayAsMainWin(win:NSWindow, title: String) {
+        
+        // 在当前窗口上显示
+        // win.level = .floating
+        
+        win.title = title
+        win.isMovableByWindowBackground = true
+        win.titlebarAppearsTransparent = true
+        win.backgroundColor = AppColor.mainBgColorNS
+        win.collectionBehavior = .canJoinAllSpaces
+        // 不透明
+        win.isOpaque = true
+        win.styleMask.remove(.fullScreen)
+        win.styleMask.remove(.miniaturizable)
+        win.styleMask.remove(.fullSizeContentView)
+        win.styleMask.remove(.resizable)
+        // win.backgroundColor = NSColor.clear
+        win.orderFrontRegardless()
+    }
     
     // MARK: - Attribute
     
-    private func displayAsAlert(win:NSWindow, Timer:Double) {
+    private func displayAsAlert(win:NSWindow, timer:Double=0) {
         
         // 在当前窗口上显示
         // win.level = .floating
     
-        
         // 设置透明
         // win.isOpaque = false
         // win.backgroundColor = NSColor.clear
@@ -36,6 +61,7 @@ extension TipView{
         win.isMovableByWindowBackground = false
         win.titleVisibility = .hidden
         win.titlebarAppearsTransparent = true
+        // 不透明
         win.isOpaque = false
         win.styleMask.remove(.closable)
         win.styleMask.remove(.fullScreen)
@@ -45,9 +71,10 @@ extension TipView{
         win.backgroundColor = NSColor.clear
         win.orderFrontRegardless()
         
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + Timer) {
-            win.close()
+        if (timer != 0){
+            DispatchQueue.main.asyncAfter(deadline: .now() + timer) {
+                win.close()
+            }
         }
     }
     
@@ -55,6 +82,7 @@ extension TipView{
         NSWindow(contentViewController: NSHostingController(rootView: self))
     }
 }
+
 
 
 

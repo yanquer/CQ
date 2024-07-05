@@ -32,7 +32,7 @@ class AutoLaunch {
             do {
                 try loginItem.register()
             } catch {
-                print("注册失败")
+                AppLog.info("注册失败")
             }
         }
     }
@@ -42,7 +42,7 @@ class AutoLaunch {
             do {
                 try loginItem.unregister()
             } catch {
-                print("取消注册失败")
+                AppLog.info("取消注册失败")
             }
         }
     }
