@@ -25,29 +25,39 @@ extension View{
         return alertWindow
     }
     
-    private func displayAsMainWin(win:NSWindow, title: String) {
-        
-        // 在当前窗口上显示
-        // win.level = .floating
-        
-        win.title = title
+    private func setCommonWinAttr(win: NSWindow){
         win.isMovableByWindowBackground = true
         win.titlebarAppearsTransparent = true
-        win.backgroundColor = AppColor.mainBgColorNS
+        // 允许在所有桌面空间
         win.collectionBehavior = .canJoinAllSpaces
         // 不透明
-        win.isOpaque = true
+        win.isOpaque = false
         win.styleMask.remove(.fullScreen)
         win.styleMask.remove(.miniaturizable)
         win.styleMask.remove(.fullSizeContentView)
         win.styleMask.remove(.resizable)
-        // win.backgroundColor = NSColor.clear
+        win.backgroundColor = NSColor.clear
         win.orderFrontRegardless()
+    }
+    
+    private func displayAsMainWin(win: NSWindow, title: String) {
+        
+        // 在当前窗口上显示
+        // win.level = .floating
+        
+        self.setCommonWinAttr(win: win)
+        
+        win.title = title
+        
+        win.backgroundColor = AppColor.mainBgColorNS
+        // 不透明
+        win.isOpaque = true
+        
     }
     
     // MARK: - Attribute
     
-    private func displayAsAlert(win:NSWindow, timer:Double=0) {
+    private func displayAsAlert(win: NSWindow, timer:Double=0) {
         
         // 在当前窗口上显示
         // win.level = .floating
@@ -58,18 +68,10 @@ extension View{
         // win.hasShadow = false  // 可选：如果不想要窗口阴影
         // win.alphaValue = 0.1
         
-        win.isMovableByWindowBackground = false
+        self.setCommonWinAttr(win: win)
         win.titleVisibility = .hidden
-        win.titlebarAppearsTransparent = true
-        // 不透明
-        win.isOpaque = false
         win.styleMask.remove(.closable)
-        win.styleMask.remove(.fullScreen)
-        win.styleMask.remove(.miniaturizable)
-        win.styleMask.remove(.fullSizeContentView)
-        win.styleMask.remove(.resizable)
-        win.backgroundColor = NSColor.clear
-        win.orderFrontRegardless()
+
         
         if (timer != 0){
             DispatchQueue.main.asyncAfter(deadline: .now() + timer) {
@@ -81,6 +83,7 @@ extension View{
     private func setWindow() -> NSWindow {
         NSWindow(contentViewController: NSHostingController(rootView: self))
     }
+    
 }
 
 
