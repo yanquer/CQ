@@ -28,6 +28,8 @@ public struct BlurView: NSViewRepresentable {
 struct TipView: View {
     
     let alertText: String
+    let sizeX: CGFloat = TipViewSize.width
+    let sizeY: CGFloat = TipViewSize.height
     
     var body: some View {
         ZStack {
@@ -40,12 +42,14 @@ struct TipView: View {
                 .cornerRadius(10)
         }
         .font(Font.system(size: 20.0))
-        .background(Color.brown.opacity(0.3).blur(radius: 10))
-        .frame(width: 300, height: 100)
+        // .background(Color.brown.opacity(0.3).blur(radius: 10))
+        .background(Color.clear)
+        .frame(width: self.sizeX, height: self.sizeY)
         .padding(.top, 40.0)
         .edgesIgnoringSafeArea(.all)
         
     }
+    
 }
 
 

@@ -74,12 +74,48 @@ extension View{
         win.titleVisibility = .hidden
         win.styleMask.remove(.closable)
 
+        win.level = .mainMenu
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenPrimary]
+        win.isRestorable = true
+        
+        self.setToFocusWin(win: win)
         
         if (timer != 0){
             DispatchQueue.main.asyncAfter(deadline: .now() + timer) {
                 win.close()
             }
         }
+    }
+    
+    internal func setToFocusWin(win: NSWindow){
+        if let foucsScreen = self.currentScreen{
+            win.setFrame(foucsScreen.visibleFrame, display: true)
+            
+            // 设置窗口的位置,使其在屏幕中心
+            // win.setFrameOrigin(NSPoint(x: foucsScreen.visibleFrame.midX,
+            //                             y: foucsScreen.visibleFrame.midY))
+            let _sizeX = TipViewSize.width
+            let _sizeY = TipViewSize.height
+            win.setFrameOrigin(NSPoint(x: foucsScreen.visibleFrame.midX - (_sizeX / 2),
+                                       y: foucsScreen.visibleFrame.midY - (_sizeY / 2)))
+        }
+    }
+    
+    internal var currentScreen: NSScreen? {
+        // return NSScreen.main
+        
+        // if let keyWindow = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+        // if let keyWindow = NSApplication.shared.keyWindow {
+        //    return NSScreen.screens.first { $0.frame.contains(keyWindow.frame.origin) }
+        // }
+        // return nil
+        
+        // 虽然API说的是, 使用 NSScreen.main 可以获取当前焦点窗口,
+        // 但是, 多显示器时, 当在副显示器的全屏APP且焦点在此APP时, 使用mian获取到的是主显示器的窗口,
+        //  其他方式 keyWindow 啥的获取到的是 nil
+        // 所以暂时曲线救国一下,
+        //  判断鼠标所在的显示器,
+        return NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
     }
     
     private func setWindow() -> NSWindow {

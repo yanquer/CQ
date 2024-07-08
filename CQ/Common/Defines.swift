@@ -13,4 +13,8 @@ struct AppColor{
     static let mainBgColorNS = NSColor(cgColor: mainBgColor.cgColor!)
 }
 
+struct TipViewSize{
+    static let width: CGFloat = 300
+    static let height: CGFloat = 100
+}
 
