@@ -8,101 +8,93 @@
 import Foundation
 import Cocoa
 
-
-class AppBlack{
-    
+final class AppBlack {
     static let this = AppBlack()
-    
-    static private func currentFoucApp() -> String?{
-        if let frontApp = NSWorkspace.shared.frontmostApplication {
-            // frontApp.bundleURL
-            let appName = frontApp.localizedName ?? "Unknown"
-            // AppLog.info("当前前台应用程序是：\(appName)")
-            return appName
-        }
-        return nil
-    }
-    
-    static private func getAllInstalledApps() -> [URL] {
+
+    private let workspace = NSWorkspace.shared
+    private var currentAppPath: String?
+    private var activateObserver: NSObjectProtocol?
+    private var cacheBlack: [String] = []
+
+    private static func getAllInstalledApps() -> [URL] {
         let fileManager = FileManager.default
         var appURLs: [URL] = []
-        
-        // 可能的应用程序目录
-        // 仅扫描当前用户安装的APP
-        let appDirectories = [
-            "/Applications",
-            // "/System/Applications",
-            // "/System/Library/CoreServices",
-             "\(NSHomeDirectory())/Applications"
-        ]
-        
+        let appDirectories = ["/Applications", "\(NSHomeDirectory())/Applications"]
+
         for directory in appDirectories {
             let url = URL(fileURLWithPath: directory)
-            if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
-                for case let fileURL as URL in enumerator {
-                    do {
-                        let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
-                        if let isDirectory = resourceValues.isDirectory, isDirectory, fileURL.pathExtension == "app" {
-                            appURLs.append(fileURL)
-                        }
-                    } catch {
-                        AppLog.info("Error retrieving resource values for \(fileURL): \(error)")
+            guard let enumerator = fileManager.enumerator(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                continue
+            }
+
+            for case let fileURL as URL in enumerator {
+                do {
+                    let values = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+                    if values.isDirectory == true && fileURL.pathExtension == "app" {
+                        appURLs.append(fileURL)
                     }
+                } catch {
+                    AppLog.info("读取应用目录失败: \(error.localizedDescription)")
                 }
             }
         }
-        
+
         return appURLs
     }
-    
-    private var cacheBlack: [String] = []
-    func getAllInstallApps(refresh: Bool=false) -> [String]{
-        
-        if (refresh || self.cacheBlack.isEmpty){
-            let installedApps = AppBlack.getAllInstalledApps()
-            installedApps.forEach {
-                AppLog.info($0.path)
-                self.cacheBlack.append($0.path)
-            }
+
+    func startObservingWorkspace() {
+        if activateObserver != nil {
+            refreshCurrentAppPath()
+            return
         }
-        
-        return self.cacheBlack
-        
-    }
-    
-//    private var cacheAppBlack: [AppItem] = []
-//    func getAllInstallAppModel(refresh: Bool=false) -> [AppItem]{
-//        
-//        if (refresh || self.cacheAppBlack.isEmpty){
-//            self.getAllInstallApps(refresh: true).forEach {
-//                self.cacheAppBlack.append(AppItem(name: $0, appPath: $0))
-//            }
-//        }
-//        
-//        return self.cacheAppBlack
-//        
-//    }
-//
-    
-    
-    func curAppInBlackList() -> Bool{
-        if let curApp = AppBlack.currentFoucApp(){
-            AppLog.info("检查\(curApp)是否需跳过")
-            let blackList = BlackList.this.records
-            for one in blackList {
-                let _path = curApp + ".app"
-                if one.hasSuffix(_path){
-                    AppLog.info("跳过\(curApp)")
-                    return true
-                }
-            }
+
+        refreshCurrentAppPath()
+        activateObserver = workspace.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.updateCurrentAppPath(notification)
         }
-        
-        return false
     }
-    
-    
-    
+
+    func stopObservingWorkspace() {
+        guard let activateObserver else { return }
+        workspace.notificationCenter.removeObserver(activateObserver)
+        self.activateObserver = nil
+    }
+
+    func refreshCurrentAppPath() {
+        currentAppPath = workspace.frontmostApplication?.bundleURL?.path
+    }
+
+    func getAllInstallApps(refresh: Bool = false) -> [String] {
+        if refresh || cacheBlack.isEmpty {
+            cacheBlack = AppBlack.getAllInstalledApps().map(\.path)
+        }
+
+        return cacheBlack
+    }
+
+    func isCurrentAppBlocked() -> Bool {
+        if currentAppPath == nil {
+            refreshCurrentAppPath()
+        }
+
+        guard let currentAppPath else {
+            return false
+        }
+
+        return BlackList.this.records.contains(currentAppPath)
+    }
+
+    private func updateCurrentAppPath(_ notification: Notification) {
+        let key = NSWorkspace.applicationUserInfoKey
+        let app = notification.userInfo?[key] as? NSRunningApplication
+        currentAppPath = app?.bundleURL?.path
+    }
 }
-
-

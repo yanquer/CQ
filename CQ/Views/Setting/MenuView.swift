@@ -10,14 +10,14 @@ import SwiftUI
 
 struct MenuView: View {
     
-    private let info = EventInfo.currentEventInfo()
+    private let config = QuitGuardConfig.shared
     
     @State private var keyMapWindow: NSWindow?
     
     @State
-    private var _doblueClickTime = Float64(EventInfo.currentEventInfo().dobulueClickTime)
+    private var _doblueClickTime = Float64(QuitGuardConfig.shared.doubleTapInterval)
     @State
-    private var _alertTime = Float64(EventInfo.currentEventInfo().alterWinCloseTime)
+    private var _alertTime = Float64(QuitGuardConfig.shared.alertWindowCloseTime)
     
     @State
     private var _startAtLogin = AutoLaunch.isEnabledAutoLaunch
@@ -137,11 +137,11 @@ struct MenuView: View {
 extension MenuView{
     
     func updateClickTime(){
-        info.dobulueClickTime = Int(self._doblueClickTime)
+        config.doubleTapInterval = self._doblueClickTime
     }
     
     func updateAlertCloseTime(){
-        info.alterWinCloseTime = Int(self._alertTime)
+        config.alertWindowCloseTime = self._alertTime
     }
 }
 
@@ -149,5 +149,4 @@ extension MenuView{
 #Preview {
     MenuView()
 }
-
 

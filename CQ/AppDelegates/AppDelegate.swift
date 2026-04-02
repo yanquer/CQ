@@ -9,31 +9,83 @@ import Foundation
 import Cocoa
 import SwiftUI
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popOver = NSPopover()
-    static var info = EventInfo.currentEventInfo()
-    
-    public func applicationDidFinishLaunching(_ notification: Notification) {
-        // 不要自动获取, 不然有的用户看不懂为啥弹出个设置
-        // if AppDelegate.hasAccessAndGain(){
-        //     AppLog.info("已获取辅助功能权限")
-        // }
-        
-        if !AppDelegate.hasAccess(){
+
+    private let config = QuitGuardConfig.shared
+    private let state = QuitGuardState()
+    private var workspaceObservers: [NSObjectProtocol] = []
+
+    private lazy var eventHandler = EventHandler(
+        config: config,
+        state: state,
+        isBlockedApp: { AppBlack.this.isCurrentAppBlocked() }
+    )
+
+    private lazy var eventTapController = EventTapController(
+        config: config,
+        handler: eventHandler
+    )
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if !AppDelegate.hasAccess() {
             #if DEBUG
             AppLog.info("可能没有获取到辅助权限, 确认后请清理后手动获取")
             #else
-            // 打开请求辅助权限窗口
             let _ = NoAccessView().openInWindow(title: "CQ请求授权", sender: self)
             #endif
         }
-            
-        AppDelegate.createEventTap()
-        
+
+        AppBlack.this.startObservingWorkspace()
+        registerWorkspaceNotifications()
+        eventTapController.start()
         makeMenuButton()
     }
-    
+
+    func applicationWillTerminate(_ notification: Notification) {
+        removeWorkspaceNotifications()
+        AppBlack.this.stopObservingWorkspace()
+        eventTapController.stop()
+    }
 }
 
+extension AppDelegate {
+    private func registerWorkspaceNotifications() {
+        let center = NSWorkspace.shared.notificationCenter
+        let willSleep = center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleWillSleep()
+        }
 
+        let didWake = center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleDidWake()
+        }
+
+        workspaceObservers = [willSleep, didWake]
+    }
+
+    private func removeWorkspaceNotifications() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach { center.removeObserver($0) }
+        workspaceObservers.removeAll()
+    }
+
+    private func handleWillSleep() {
+        AppLog.info("系统即将休眠，暂停事件拦截")
+        eventTapController.stop()
+    }
+
+    private func handleDidWake() {
+        AppLog.info("系统已唤醒，重建事件拦截")
+        AppBlack.this.refreshCurrentAppPath()
+        eventTapController.refresh()
+    }
+}

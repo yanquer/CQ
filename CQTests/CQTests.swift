@@ -6,31 +6,125 @@
 //
 
 import XCTest
+import AppKit
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    func testFirstCommandQRequiresConfirmation() {
+        let config = makeConfig()
+        let state = QuitGuardState()
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        let decision = state.handleCommandQKeyDown(now: 1_000, config: config)
+
+        XCTAssertEqual(decision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        XCTAssertTrue(state.isAwaitingSecondPress)
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testSecondCommandQPassesWithinWindow() {
+        let config = makeConfig()
+        let state = QuitGuardState()
+
+        _ = state.handleCommandQKeyDown(now: 1_000, config: config)
+        state.markKeyUp()
+        let decision = state.handleCommandQKeyDown(now: 2_000, config: config)
+
+        XCTAssertEqual(decision, .passAndReset(nil))
+        XCTAssertFalse(state.isAwaitingSecondPress)
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
-    }
+    func testTimeoutResetsConfirmation() {
+        let config = makeConfig(doubleTap: 0.05)
+        let state = QuitGuardState()
+        let expectation = expectation(description: "等待确认状态过期")
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
+        _ = state.handleCommandQKeyDown(now: 1_000, config: config)
+        state.markKeyUp()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            expectation.fulfill()
         }
+        wait(for: [expectation], timeout: 1)
+
+        let decision = state.handleCommandQKeyDown(now: 2_000, config: config)
+        XCTAssertEqual(decision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
     }
 
+    func testLongPressDoesNotBecomeSecondConfirmation() {
+        let config = makeConfig()
+        let state = QuitGuardState()
+
+        _ = state.handleCommandQKeyDown(now: 1_000, config: config)
+        let longPress = state.handleCommandQKeyDown(now: 1_200, config: config)
+        state.markKeyUp()
+        let nextPress = state.handleCommandQKeyDown(now: 2_000, config: config)
+
+        XCTAssertEqual(longPress, .passAndReset("检测到为长按事件, 忽略"))
+        XCTAssertEqual(nextPress, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+    }
+
+    func testBlacklistedAppAlwaysPasses() {
+        let handler = makeHandler(isBlockedApp: true)
+        let decision = handler.decision(
+            for: commandQEvent(keyDown: true, flags: [.maskCommand]),
+            eventType: .keyDown
+        )
+
+        XCTAssertEqual(decision, .pass)
+    }
+
+    func testCommandShiftQWillNotBeIntercepted() {
+        let handler = makeHandler(isBlockedApp: false)
+        let decision = handler.decision(
+            for: commandQEvent(keyDown: true, flags: [.maskCommand, .maskShift]),
+            eventType: .keyDown
+        )
+
+        XCTAssertEqual(decision, .pass)
+    }
+
+    func testWakeResetClearsRuntimeState() {
+        let handler = makeHandler(isBlockedApp: false)
+        let firstDecision = handler.decision(
+            for: commandQEvent(keyDown: true, flags: [.maskCommand]),
+            eventType: .keyDown
+        )
+
+        XCTAssertEqual(firstDecision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        handler.resetRuntimeState()
+
+        let secondDecision = handler.decision(
+            for: commandQEvent(keyDown: true, flags: [.maskCommand]),
+            eventType: .keyDown
+        )
+
+        XCTAssertEqual(secondDecision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+    }
+}
+
+private extension CQTests {
+    func makeConfig(doubleTap: TimeInterval = 3, alert: TimeInterval = 3) -> QuitGuardConfig {
+        let config = QuitGuardConfig()
+        config.doubleTapInterval = doubleTap
+        config.alertWindowCloseTime = alert
+        return config
+    }
+
+    func makeHandler(isBlockedApp: Bool) -> EventHandler {
+        EventHandler(
+            config: makeConfig(),
+            state: QuitGuardState(),
+            isBlockedApp: { isBlockedApp }
+        )
+    }
+
+    func commandQEvent(keyDown: Bool, flags: CGEventFlags) -> CGEvent {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let event = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 12,
+            keyDown: keyDown
+        )!
+        event.flags = flags
+        return event
+    }
 }
