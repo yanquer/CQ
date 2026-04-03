@@ -7,11 +7,86 @@
 
 import Foundation
 
-final class QuitGuardConfig {
-    static let shared = QuitGuardConfig()
+struct QuitGuardSettings {
+    static let defaultValue = QuitGuardSettings()
 
     var doubleTapInterval: TimeInterval = 3
     var alertWindowCloseTime: TimeInterval = 3
+}
+
+final class QuitGuardSettingsStore {
+    private enum Key {
+        static let doubleTapInterval = "quit_guard.double_tap_interval"
+        static let alertWindowCloseTime = "quit_guard.alert_window_close_time"
+    }
+
+    private let userDefaults: UserDefaults
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
+
+    func load() -> QuitGuardSettings {
+        QuitGuardSettings(
+            doubleTapInterval: readValue(
+                for: Key.doubleTapInterval,
+                default: QuitGuardSettings.defaultValue.doubleTapInterval
+            ),
+            alertWindowCloseTime: readValue(
+                for: Key.alertWindowCloseTime,
+                default: QuitGuardSettings.defaultValue.alertWindowCloseTime
+            )
+        )
+    }
+
+    func save(_ settings: QuitGuardSettings) {
+        userDefaults.set(settings.doubleTapInterval, forKey: Key.doubleTapInterval)
+        userDefaults.set(settings.alertWindowCloseTime, forKey: Key.alertWindowCloseTime)
+    }
+
+    private func readValue(
+        for key: String,
+        default defaultValue: TimeInterval
+    ) -> TimeInterval {
+        guard userDefaults.object(forKey: key) != nil else { return defaultValue }
+        return userDefaults.double(forKey: key)
+    }
+}
+
+final class QuitGuardConfig {
+    static let shared = QuitGuardConfig()
+
+    private let store: QuitGuardSettingsStore
+
+    var doubleTapInterval: TimeInterval {
+        didSet {
+            persist()
+        }
+    }
+
+    var alertWindowCloseTime: TimeInterval {
+        didSet {
+            persist()
+        }
+    }
+
+    init(store: QuitGuardSettingsStore = QuitGuardSettingsStore()) {
+        let settings = store.load()
+        self.store = store
+        self.doubleTapInterval = settings.doubleTapInterval
+        self.alertWindowCloseTime = settings.alertWindowCloseTime
+    }
+
+    private var settings: QuitGuardSettings {
+        QuitGuardSettings(
+            doubleTapInterval: doubleTapInterval,
+            alertWindowCloseTime: alertWindowCloseTime
+        )
+    }
+
+    private func persist() {
+        store.save(settings)
+    }
 }
 
 enum QuitDecision: Equatable {

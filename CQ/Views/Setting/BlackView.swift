@@ -17,6 +17,9 @@ struct WhitelistSection: View {
             subtitle: subtitleText
         ) {
             VStack(spacing: MenuPanelStyle.whitelistSectionSpacing) {
+                if !model.whitelistItems.isEmpty {
+                    MenuWhitelistSearchField(text: $model.whitelistSearchText)
+                }
                 listContent
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
                     MenuInlineActionButton(
@@ -42,19 +45,23 @@ struct WhitelistSection: View {
 
 private extension WhitelistSection {
     var subtitleText: String {
-        model.whitelistItems.isEmpty
-        ? "放行后不会触发二次确认，适合你明确不想拦截的应用。"
-        : "当前已放行 \(model.whitelistItems.count) 个应用，点击条目后可直接移除。"
+        model.whitelistSubtitleText
     }
 
     @ViewBuilder
     var listContent: some View {
         if model.whitelistItems.isEmpty {
             MenuWhitelistEmptyState()
+        } else if model.filteredWhitelistItems.isEmpty {
+            MenuWhitelistEmptyState(
+                systemImage: "magnifyingglass",
+                title: "没有匹配结果",
+                subtitle: "换个应用名或路径关键词试试。"
+            )
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
-                    ForEach(model.whitelistItems, id: \.self) { item in
+                    ForEach(model.filteredWhitelistItems, id: \.self) { item in
                         MenuWhitelistRow(
                             path: item,
                             isSelected: model.selectedWhitelistItem == item
@@ -75,6 +82,44 @@ private extension WhitelistSection {
                     .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
             )
         }
+    }
+}
+
+struct MenuWhitelistSearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: MenuPanelStyle.whitelistSearchSpacing) {
+            Image(systemName: "magnifyingglass")
+                .font(MenuPanelStyle.whitelistSearchIconFont)
+                .foregroundStyle(MenuPanelStyle.textMuted)
+            TextField("搜索应用名或路径", text: $text)
+                .textFieldStyle(.plain)
+                .foregroundStyle(MenuPanelStyle.textPrimary)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(MenuPanelStyle.textMuted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, MenuPanelStyle.whitelistSearchHorizontalPadding)
+        .padding(.vertical, MenuPanelStyle.whitelistSearchVerticalPadding)
+        .background(searchBackground)
+    }
+}
+
+private extension MenuWhitelistSearchField {
+    var searchBackground: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.03))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
+            )
     }
 }
 
@@ -135,15 +180,29 @@ private extension MenuWhitelistRow {
 }
 
 struct MenuWhitelistEmptyState: View {
+    let systemImage: String
+    let title: String
+    let subtitle: String
+
+    init(
+        systemImage: String = "checkmark.shield",
+        title: String = "还没有放行应用",
+        subtitle: String = "需要跳过二次确认的应用，可以在这里直接添加。"
+    ) {
+        self.systemImage = systemImage
+        self.title = title
+        self.subtitle = subtitle
+    }
+
     var body: some View {
         VStack(spacing: MenuPanelStyle.emptyStateSpacing) {
-            Image(systemName: "checkmark.shield")
+            Image(systemName: systemImage)
                 .font(MenuPanelStyle.whitelistEmptyIconFont)
                 .foregroundStyle(MenuPanelStyle.accent)
-            Text("还没有放行应用")
+            Text(title)
                 .font(MenuPanelStyle.whitelistEmptyTitleFont)
                 .foregroundStyle(MenuPanelStyle.textPrimary)
-            Text("需要跳过二次确认的应用，可以在这里直接添加。")
+            Text(subtitle)
                 .font(MenuPanelStyle.whitelistEmptySubtitleFont)
                 .foregroundStyle(MenuPanelStyle.textMuted)
                 .multilineTextAlignment(.center)

@@ -10,6 +10,30 @@ import AppKit
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    func testQuitGuardSettingsStoreLoadsDefaults() {
+        let userDefaults = makeUserDefaults()
+        let store = QuitGuardSettingsStore(userDefaults: userDefaults)
+        let settings = store.load()
+
+        XCTAssertEqual(settings.doubleTapInterval, 3)
+        XCTAssertEqual(settings.alertWindowCloseTime, 3)
+    }
+
+    func testQuitGuardConfigRestoresPersistedSettings() {
+        let userDefaults = makeUserDefaults()
+        let store = QuitGuardSettingsStore(userDefaults: userDefaults)
+        let config = QuitGuardConfig(store: store)
+
+        config.doubleTapInterval = 7
+        config.alertWindowCloseTime = 5
+
+        let restored = QuitGuardConfig(
+            store: QuitGuardSettingsStore(userDefaults: userDefaults)
+        )
+        XCTAssertEqual(restored.doubleTapInterval, 7)
+        XCTAssertEqual(restored.alertWindowCloseTime, 5)
+    }
+
     func testFirstCommandQRequiresConfirmation() {
         let config = makeConfig()
         let state = QuitGuardState()
@@ -104,7 +128,7 @@ final class CQTests: XCTestCase {
         let config = makeConfig(doubleTap: 3, alert: 3)
         let model = MenuPanelModel(
             config: config,
-            blackList: BlackList(),
+            blackList: makeBlackList(),
             isAutoLaunchEnabled: { false },
             setAutoLaunch: { _ in },
             selectApp: { _ in },
@@ -127,7 +151,7 @@ final class CQTests: XCTestCase {
         let config = makeConfig(doubleTap: 2, alert: 4)
         let model = MenuPanelModel(
             config: config,
-            blackList: BlackList(),
+            blackList: makeBlackList(),
             isAutoLaunchEnabled: { false },
             setAutoLaunch: { _ in },
             selectApp: { _ in },
@@ -138,14 +162,138 @@ final class CQTests: XCTestCase {
         model.doubleTapIntervalDraft = 6
         XCTAssertTrue(model.hasPendingChanges)
     }
+
+    func testWhitelistStoreReturnsEmptyWhenFileMissing() {
+        let store = WhitelistStore(fileURL: makeTempFileURL())
+        XCTAssertEqual(store.load(), [])
+    }
+
+    func testWhitelistStoreCreatesDirectoryAndRestoresRecords() {
+        let fileURL = makeTempFileURL()
+        let store = WhitelistStore(fileURL: fileURL)
+
+        store.save(["/Applications/A.app", "/Applications/B.app"])
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fileURL.deletingLastPathComponent().path)
+        )
+        XCTAssertEqual(WhitelistStore(fileURL: fileURL).load(), [
+            "/Applications/A.app",
+            "/Applications/B.app"
+        ])
+    }
+
+    func testBlackListAppendPersistsWithoutDuplicates() {
+        let fileURL = makeTempFileURL()
+        let blackList = BlackList(store: WhitelistStore(fileURL: fileURL))
+
+        blackList.append(data: "/Applications/A.app")
+        blackList.append(data: "/Applications/A.app")
+
+        XCTAssertEqual(
+            BlackList(store: WhitelistStore(fileURL: fileURL)).records,
+            ["/Applications/A.app"]
+        )
+    }
+
+    func testBlackListRemovePersists() {
+        let fileURL = makeTempFileURL()
+        let blackList = BlackList(store: WhitelistStore(fileURL: fileURL))
+
+        blackList.append(data: "/Applications/A.app")
+        blackList.remove(data: "/Applications/A.app")
+
+        XCTAssertEqual(BlackList(store: WhitelistStore(fileURL: fileURL)).records, [])
+    }
+
+    func testBlackListContainsUsesIndex() {
+        let blackList = makeBlackList(records: ["/Applications/A.app"])
+
+        XCTAssertTrue(blackList.contains("/Applications/A.app"))
+        blackList.remove(data: "/Applications/A.app")
+        XCTAssertFalse(blackList.contains("/Applications/A.app"))
+    }
+
+    func testMenuPanelSearchMatchesAppName() {
+        let model = makeMenuPanelModel(records: [
+            "/Applications/Safari.app",
+            "/Applications/Xcode.app"
+        ])
+
+        model.whitelistSearchText = "safari"
+
+        XCTAssertEqual(model.filteredWhitelistItems, ["/Applications/Safari.app"])
+    }
+
+    func testMenuPanelSearchMatchesPathCaseInsensitively() {
+        let model = makeMenuPanelModel(records: [
+            "/System/Applications/Utilities/Terminal.app",
+            "/Applications/Xcode.app"
+        ])
+
+        model.whitelistSearchText = "utilities/terminal"
+
+        XCTAssertEqual(
+            model.filteredWhitelistItems,
+            ["/System/Applications/Utilities/Terminal.app"]
+        )
+    }
+
+    func testMenuPanelSearchClearsHiddenSelection() {
+        let terminal = "/System/Applications/Utilities/Terminal.app"
+        let model = makeMenuPanelModel(records: [
+            terminal,
+            "/Applications/Xcode.app"
+        ])
+
+        model.selectWhitelistItem(terminal)
+        model.whitelistSearchText = "xcode"
+
+        XCTAssertNil(model.selectedWhitelistItem)
+    }
+
+    func testMenuButtonEventMaskSupportsLeftAndRightClick() {
+        XCTAssertEqual(menuButtonEventMask, [.leftMouseUp, .rightMouseUp])
+    }
 }
 
 private extension CQTests {
     func makeConfig(doubleTap: TimeInterval = 3, alert: TimeInterval = 3) -> QuitGuardConfig {
-        let config = QuitGuardConfig()
+        let store = QuitGuardSettingsStore(userDefaults: makeUserDefaults())
+        let config = QuitGuardConfig(store: store)
         config.doubleTapInterval = doubleTap
         config.alertWindowCloseTime = alert
         return config
+    }
+
+    func makeBlackList(records: [String] = []) -> BlackList {
+        let blackList = BlackList(store: WhitelistStore(fileURL: makeTempFileURL()))
+        records.forEach { blackList.append(data: $0) }
+        return blackList
+    }
+
+    func makeMenuPanelModel(records: [String]) -> MenuPanelModel {
+        MenuPanelModel(
+            config: makeConfig(),
+            blackList: makeBlackList(records: records),
+            isAutoLaunchEnabled: { false },
+            setAutoLaunch: { _ in },
+            selectApp: { _ in },
+            quitAction: {}
+        )
+    }
+
+    func makeUserDefaults() -> UserDefaults {
+        let suiteName = "CQTests.\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        userDefaults.removePersistentDomain(forName: suiteName)
+        return userDefaults
+    }
+
+    func makeTempFileURL() -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        return directory.appendingPathComponent("whitelist.json")
     }
 
     func makeHandler(isBlockedApp: Bool) -> EventHandler {

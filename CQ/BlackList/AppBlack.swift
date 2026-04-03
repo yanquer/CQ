@@ -89,7 +89,7 @@ final class AppBlack {
             return false
         }
 
-        return BlackList.this.records.contains(currentAppPath)
+        return BlackList.this.contains(currentAppPath)
     }
 
     private func updateCurrentAppPath(_ notification: Notification) {

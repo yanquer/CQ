@@ -3,15 +3,12 @@
 //  CQ
 //
 //  Created by 烟雀 on 2024/1/2.
-//
-// 状态栏菜单
-//
-
-import Foundation
+import AppKit
 import SwiftUI
 
-extension AppDelegate{
-    
+let menuButtonEventMask: NSEvent.EventTypeMask = [.leftMouseUp, .rightMouseUp]
+
+extension AppDelegate {
     func makeMenuButton() {
         popOver.behavior = .transient
         popOver.animates = true
@@ -45,6 +42,7 @@ private extension AppDelegate {
         menuButton.image = image
         menuButton.imagePosition = .imageOnly
         menuButton.title = ""
+        menuButton.sendAction(on: menuButtonEventMask)
         menuButton.target = self
         menuButton.action = #selector(MenuButtonToggle)
     }

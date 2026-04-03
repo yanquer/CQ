@@ -5,58 +5,85 @@
 //  Created by 烟雀 on 2024/7/4.
 //
 
+import Combine
 import Foundation
 
+final class WhitelistStore {
+    private let fileStore: AppFileStore
 
-class BlackList: ObservableObject{
-    // 单例
-    static let this = BlackList()
-    let cacheToDisk = CacheDisk()
-    
-    @Published
-    var records: [String] = []
-    
-    init() {
-        self.loadFromDisk()
+    init(fileStore: AppFileStore = AppFileStore(fileName: "whitelist.json")) {
+        self.fileStore = fileStore
     }
-    
-    private var allData: JsonPasteData? = [:]
-    
-    private func loadFromDisk(){
-        if let jsonData = self.cacheToDisk.loadFromCache(){
-            allData = jsonData
-            if let diskRecords = jsonData["diskData"]{
-                self.records = diskRecords
-            }
+
+    init(fileURL: URL) {
+        self.fileStore = AppFileStore(fileURL: fileURL)
+    }
+
+    var fileURL: URL {
+        fileStore.fileURL
+    }
+
+    func load() -> [String] {
+        normalize(fileStore.load([String].self) ?? [])
+    }
+
+    func save(_ records: [String]) {
+        fileStore.save(normalize(records))
+    }
+
+    private func normalize(_ records: [String]) -> [String] {
+        var seen = Set<String>()
+        return records.filter {
+            guard !$0.isEmpty, !seen.contains($0) else { return false }
+            seen.insert($0)
+            return true
         }
     }
-    
-    private func cache(){
-        allData!["diskData"] = self.records
-        self.cacheToDisk.writeToCache(data: allData!)
-    }
-    
-    func append(data: String?){
-        if (data == nil || data == "" || data!.isEmpty) {return}
-        self.records.append(data!)
-        self.cache()
-    }
-    
-    func remove(data: String?){
-        if (data == nil || data == "" || data!.isEmpty) {return}
-        
-        guard let findIndex = self.records.firstIndex(of: data!) else {return}
-        self.records.remove(at: findIndex)
-        self.cache()
-    }
-
 }
 
+final class BlackList: ObservableObject {
+    static let this = BlackList()
 
-class BlackCache{
-    let this = BlackCache()
-    
-    
-    
+    @Published private(set) var records: [String]
+
+    private var recordSet: Set<String>
+    private let store: WhitelistStore
+
+    init(store: WhitelistStore = WhitelistStore()) {
+        self.store = store
+        self.records = []
+        self.recordSet = []
+        loadFromDisk()
+    }
+
+    private func loadFromDisk() {
+        syncRecords(store.load())
+    }
+
+    private func persist() {
+        store.save(records)
+    }
+
+    func contains(_ path: String) -> Bool {
+        recordSet.contains(path)
+    }
+
+    func append(data: String?) {
+        guard let data, !data.isEmpty else { return }
+        guard recordSet.insert(data).inserted else { return }
+        records.append(data)
+        persist()
+    }
+
+    func remove(data: String?) {
+        guard let data, !data.isEmpty else { return }
+        guard recordSet.remove(data) != nil else { return }
+        records.removeAll { $0 == data }
+        persist()
+    }
+
+    private func syncRecords(_ records: [String]) {
+        self.records = records
+        recordSet = Set(records)
+    }
 }
-

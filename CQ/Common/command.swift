@@ -8,8 +8,6 @@
 import Foundation
 import SwiftUI
 
-typealias JsonPasteData = [String: [String]]
-
 class ShellCommand{
     static func exec(cmds: [String]) -> Process{
         return Process.launchedProcess(
@@ -87,7 +85,6 @@ class MaxArray{
     }
     
 }
-
 
 
 

@@ -97,12 +97,16 @@ struct MenuPanelStyle {
     static let valuePillHorizontalPadding: CGFloat = 9
     static let valuePillVerticalPadding: CGFloat = 5
     static let whitelistSectionSpacing: CGFloat = 12
+    static let whitelistSearchSpacing: CGFloat = 8
+    static let whitelistSearchHorizontalPadding: CGFloat = 12
+    static let whitelistSearchVerticalPadding: CGFloat = 10
     static let whitelistListSpacing: CGFloat = 10
     static let whitelistListPadding: CGFloat = 8
     static let whitelistButtonSpacing: CGFloat = 10
     static let whitelistRowSpacing: CGFloat = 12
     static let whitelistRowPadding: CGFloat = 10
     static let whitelistIconSize: CGFloat = 38
+    static let whitelistSearchIconFont: Font = .system(size: 12, weight: .semibold)
     static let emptyStateSpacing: CGFloat = 10
     static let emptyStateHorizontalPadding: CGFloat = 18
     static let headerTitleFont: Font = .system(size: 22, weight: .bold, design: .rounded)
@@ -162,8 +166,14 @@ final class MenuPanelModel: ObservableObject {
     @Published var startAtLogin: Bool
     @Published var doubleTapIntervalDraft: Double
     @Published var alertCloseTimeDraft: Double
+    @Published var whitelistSearchText: String = "" {
+        didSet {
+            refreshFilteredWhitelistItems()
+        }
+    }
     @Published var selectedWhitelistItem: String?
     @Published private(set) var whitelistItems: [String]
+    @Published private(set) var filteredWhitelistItems: [String]
 
     private let config: QuitGuardConfig
     private let blackList: BlackList
@@ -193,6 +203,7 @@ final class MenuPanelModel: ObservableObject {
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
         self.whitelistItems = blackList.records
+        self.filteredWhitelistItems = blackList.records
         bindWhitelist()
     }
 
@@ -204,6 +215,16 @@ final class MenuPanelModel: ObservableObject {
     var summaryText: String {
         let suffix = whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
         return hasPendingChanges ? "有未应用更改 · \(suffix)" : "双击 Cmd+Q 才会退出 · \(suffix)"
+    }
+
+    var whitelistSubtitleText: String {
+        if whitelistItems.isEmpty {
+            return "放行后不会触发二次确认，适合你明确不想拦截的应用。"
+        }
+        if hasActiveWhitelistSearch {
+            return "共 \(whitelistItems.count) 个应用，当前匹配 \(filteredWhitelistItems.count) 个。"
+        }
+        return "当前已放行 \(whitelistItems.count) 个应用，点击条目后可直接移除。"
     }
 
     func toggleLaunchAtLogin(_ isEnabled: Bool) {
@@ -236,6 +257,14 @@ final class MenuPanelModel: ObservableObject {
 }
 
 private extension MenuPanelModel {
+    var hasActiveWhitelistSearch: Bool {
+        !normalizedWhitelistSearchText.isEmpty
+    }
+
+    var normalizedWhitelistSearchText: String {
+        whitelistSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func bindWhitelist() {
         blackList.$records
             .receive(on: RunLoop.main)
@@ -247,14 +276,39 @@ private extension MenuPanelModel {
 
     func syncWhitelist(_ records: [String]) {
         whitelistItems = records
-        guard let selectedWhitelistItem,
-              !records.contains(selectedWhitelistItem) else { return }
-        self.selectedWhitelistItem = nil
+        refreshFilteredWhitelistItems()
     }
 
     func appendWhitelist(_ url: URL?) {
         guard let url else { return }
         blackList.append(data: url.path)
+    }
+
+    func refreshFilteredWhitelistItems() {
+        filteredWhitelistItems = makeFilteredWhitelistItems()
+        syncSelectedWhitelistItem()
+    }
+
+    func makeFilteredWhitelistItems() -> [String] {
+        let query = normalizedWhitelistSearchText
+        guard !query.isEmpty else { return whitelistItems }
+        return whitelistItems.filter { matchesWhitelistSearch(in: $0, query: query) }
+    }
+
+    func matchesWhitelistSearch(in item: String, query: String) -> Bool {
+        let appName = URL(fileURLWithPath: item)
+            .deletingPathExtension()
+            .lastPathComponent
+        return appName.localizedCaseInsensitiveContains(query) ||
+            item.localizedCaseInsensitiveContains(query)
+    }
+
+    func syncSelectedWhitelistItem() {
+        guard let selectedWhitelistItem else { return }
+        guard filteredWhitelistItems.contains(selectedWhitelistItem) else {
+            self.selectedWhitelistItem = nil
+            return
+        }
     }
 }
 
