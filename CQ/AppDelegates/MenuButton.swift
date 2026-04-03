@@ -15,28 +15,37 @@ extension AppDelegate{
     func makeMenuButton() {
         popOver.behavior = .transient
         popOver.animates = true
-        popOver.contentViewController = NSViewController()
-        popOver.contentViewController?.view = NSHostingView(rootView: MenuShowView())
-        popOver.contentSize = NSSize(width: 360, height: 800)
+        popOver.contentViewController = NSHostingController(rootView: MenuShowView())
+        popOver.contentSize = NSSize(
+            width: MenuPanelStyle.popoverWidth,
+            height: MenuPanelStyle.popoverHeight
+        )
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let menuButton = statusItem?.button,
-           let image = NSImage(named: "icon") {
-            image.isTemplate = false
-            image.size = NSSize(width: 16, height: 16)
-            menuButton.image = image
-            menuButton.imagePosition = .imageOnly
-            menuButton.title = ""
-            menuButton.action = #selector(MenuButtonToggle)
-        }
+        configureMenuButton()
     }
     
     @objc func MenuButtonToggle(sender: AnyObject) {
-        //      showing popover
         if popOver.isShown{
             popOver.performClose(sender)
-        }else{
-            //Top Get Button Location for popover arrow
-            self.popOver.show(relativeTo: (statusItem?.button!.bounds)!, of: (statusItem?.button!)!, preferredEdge: NSRectEdge.minY)
+            return
         }
+
+        guard let button = statusItem?.button else { return }
+        popOver.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+}
+
+private extension AppDelegate {
+    func configureMenuButton() {
+        guard let menuButton = statusItem?.button,
+              let image = NSImage(named: "icon") else { return }
+
+        image.isTemplate = false
+        image.size = NSSize(width: 16, height: 16)
+        menuButton.image = image
+        menuButton.imagePosition = .imageOnly
+        menuButton.title = ""
+        menuButton.target = self
+        menuButton.action = #selector(MenuButtonToggle)
     }
 }

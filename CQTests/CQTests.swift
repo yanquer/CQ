@@ -99,6 +99,45 @@ final class CQTests: XCTestCase {
 
         XCTAssertEqual(secondDecision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
     }
+
+    func testMenuPanelDraftsOnlyWriteAfterApply() {
+        let config = makeConfig(doubleTap: 3, alert: 3)
+        let model = MenuPanelModel(
+            config: config,
+            blackList: BlackList(),
+            isAutoLaunchEnabled: { false },
+            setAutoLaunch: { _ in },
+            selectApp: { _ in },
+            quitAction: {}
+        )
+
+        model.doubleTapIntervalDraft = 7
+        model.alertCloseTimeDraft = 5
+
+        XCTAssertEqual(config.doubleTapInterval, 3)
+        XCTAssertEqual(config.alertWindowCloseTime, 3)
+
+        model.applySettings()
+
+        XCTAssertEqual(config.doubleTapInterval, 7)
+        XCTAssertEqual(config.alertWindowCloseTime, 5)
+    }
+
+    func testMenuPanelTracksPendingChanges() {
+        let config = makeConfig(doubleTap: 2, alert: 4)
+        let model = MenuPanelModel(
+            config: config,
+            blackList: BlackList(),
+            isAutoLaunchEnabled: { false },
+            setAutoLaunch: { _ in },
+            selectApp: { _ in },
+            quitAction: {}
+        )
+
+        XCTAssertFalse(model.hasPendingChanges)
+        model.doubleTapIntervalDraft = 6
+        XCTAssertTrue(model.hasPendingChanges)
+    }
 }
 
 private extension CQTests {

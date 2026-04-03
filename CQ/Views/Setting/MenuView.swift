@@ -8,145 +8,114 @@
 import Foundation
 import SwiftUI
 
-struct MenuView: View {
-    
-    private let config = QuitGuardConfig.shared
-    
-    @State private var keyMapWindow: NSWindow?
-    
-    @State
-    private var _doblueClickTime = Float64(QuitGuardConfig.shared.doubleTapInterval)
-    @State
-    private var _alertTime = Float64(QuitGuardConfig.shared.alertWindowCloseTime)
-    
-    @State
-    private var _startAtLogin = AutoLaunch.isEnabledAutoLaunch
-    
+struct GeneralSettingsSection: View {
+    @ObservedObject var model: MenuPanelModel
+
     var body: some View {
-        
-        VStack( alignment: .leading, spacing: 0) {
-            
-        
-            Toggle(isOn: $_startAtLogin){
-                Text("登陆时启动")
-                    .fontWeight(.medium)
-                    .padding(.top, 5.0)
-                    .frame(width: 200, alignment: .leading)
+        VStack(alignment: .leading, spacing: MenuPanelStyle.sectionSpacing) {
+            MenuPanelCard(
+                title: "启动行为",
+                subtitle: "保持常驻，但不打扰你的工作流。"
+            ) {
+                MenuSettingToggleRow(
+                    title: "登录时启动",
+                    subtitle: "打开电脑后自动进入菜单栏，减少手动启动。",
+                    isOn: Binding(
+                        get: { model.startAtLogin },
+                        set: model.toggleLaunchAtLogin
+                    )
+                )
             }
-                .padding()
-                .onChange(of: _startAtLogin, initial: false) { (oldValue, newValue) in
-                    if newValue {
-                        AutoLaunch.enableAutoLaunch()
-                    } else {
-                        AutoLaunch.disableAutoLaunch()
-                    }
-                    // _startAtLogin = newValue
+
+            MenuPanelCard(
+                title: "退出保护行为",
+                subtitle: "改的是保护节奏，点击“应用更改”后才会写回配置。"
+            ) {
+                VStack(spacing: 16) {
+                    MenuSettingSliderRow(
+                        title: "CMD+Q 最长间隔时间",
+                        subtitle: "两次按键在这个时长内会被视为确认退出。",
+                        value: $model.doubleTapIntervalDraft
+                    )
+                    MenuSettingSliderRow(
+                        title: "提示窗口关闭时间",
+                        subtitle: "提示浮层的停留时间，适合按自己的节奏调整。",
+                        value: $model.alertCloseTimeDraft
+                    )
                 }
-            
-            Divider()
-                .padding(.horizontal, 10.0)
-                .frame(width: 300)
-            
-            Group {
-                HStack(
-                    spacing: 0){
-                        Image(systemName: "gear")
-                            .padding(.top, 15.0)
-                            .padding(.leading, 15.0)
-                            .frame(width: 40, alignment: .leading)
-                        
-                        Text("CMD+Q最长间隔时间")
-                            .fontWeight(.medium)
-                            .padding(.top, 15.0)
-                            .frame(width: 200, alignment: .leading)
-                    }
-                Slider(value: $_doblueClickTime, in: 1...8, label: {
-                    Text("\(Int(self._doblueClickTime))")
-                        .font(Font.system(size: 12.0))
-                        .fontWeight(.light)
-                        .colorMultiply(.brown)
-                }).frame(width: 200, alignment: .leading)
-                    .padding(.leading, 15.0)
-                    .padding(.top, 15.0)
-                    .padding(.bottom, 15.0)
             }
-            
-            Divider()
-                .padding(.horizontal, 10.0)
-                .frame(width: 300)
-            
-            Group {
-                HStack(
-                    spacing: 0) {
-                        Image(systemName: "gear")
-                            .padding(.top, 15.0)
-                            .padding(.leading, 15.0)
-                            .frame(width: 40, alignment: .leading)
-                        
-                        Text("提示窗口关闭时间")
-                            .fontWeight(.medium)
-                            .padding(.top, 15.0)
-                            .frame(width: 200, alignment: .leading)
-                    }
-                Slider(value: $_alertTime, in: 1...8, label: {
-                    Text("\(Int(self._alertTime))")
-                        .font(Font.system(size: 12.0))
-                        .fontWeight(.light)
-                        .colorMultiply(.brown)
-                }).frame(width: 200, alignment: .leading)
-                    .padding(.leading, 15.0)
-                    .padding(.top, 15.0)
-                    .padding(.bottom, 15.0)
-            }
-            Divider()
-                .padding(.horizontal, 10.0)
-                .frame(width: 300)
         }
-        
-        
-        HStack {
-            Button(action: {
-                updateClickTime()
-                updateAlertCloseTime()
-            }, label: {
-                Text("应用")
-                    // .foregroundColor(.yellow)
-            })
-            .padding(.top, 15.0)
-            .padding(.bottom, 10.0)
-            .cornerRadius(100)
-            .frame(width: 120, alignment: .leading)
-            
-            Button(action: {
-                NSApplication.shared.terminate(self)
-            }, label: {
-                Text("退出")
-                    // .foregroundColor(.yellow)
-            })
-            .padding(.top, 15.0)
-            .padding(.bottom, 10.0)
-            .cornerRadius(100)
-            .frame(width: 120, alignment: .trailing)
-        }
-        
-    }
-    
-}
-
-
-extension MenuView{
-    
-    func updateClickTime(){
-        config.doubleTapInterval = self._doblueClickTime
-    }
-    
-    func updateAlertCloseTime(){
-        config.alertWindowCloseTime = self._alertTime
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
+struct MenuSettingToggleRow: View {
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(MenuPanelStyle.textPrimary)
+                Text(subtitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(MenuPanelStyle.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(MenuPanelStyle.accent)
+        }
+    }
+}
+
+struct MenuSettingSliderRow: View {
+    let title: String
+    let subtitle: String
+    @Binding var value: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(MenuPanelStyle.textPrimary)
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(MenuPanelStyle.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                MenuSettingValuePill(value: value)
+            }
+            Slider(value: $value, in: 1...8, step: 1)
+                .tint(MenuPanelStyle.accent)
+        }
+    }
+}
+
+struct MenuSettingValuePill: View {
+    let value: Double
+
+    var body: some View {
+        Text("\(Int(value)) 秒")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(MenuPanelStyle.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(MenuPanelStyle.selectedControlFill)
+            )
+    }
+}
 
 #Preview {
-    MenuView()
+    GeneralSettingsSection(model: MenuPanelModel())
 }
-

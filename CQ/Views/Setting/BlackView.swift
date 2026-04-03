@@ -8,116 +8,159 @@
 import Foundation
 import SwiftUI
 
-
-struct BlackView: View {
-    
-    // @State private var whitelistItems: [String] = BlackList.this.records // 白名单数据项
-    @ObservedObject private var whitelistObj: BlackList = BlackList.this
-    
-    
-    @State private var selectedItem: String? = nil
-    
-    private let mainBgColor = Color(red: 0.32, green: 0.32, blue: 0.38)
+struct WhitelistSection: View {
+    @ObservedObject var model: MenuPanelModel
 
     var body: some View {
-        VStack {
-            Text("跳过以下程序的 `Cmd+Q` 检查")
-                .padding(.top, 10)
-                
-            ScrollView{
-                
-                    
-                VStack(spacing: 0){
-//                        List(whitelistItems.indices, id: \.self) { index in
-//                            Text(whitelistItems[index])
-//                                .frame(maxWidth: /*@START_MENU_TOKEN@*/.infinity/*@END_MENU_TOKEN@*/, alignment: .leading)
-//                                .contentShape(
-//                                    Rectangle()
-//                                ) // 使整个行可点击
-//                                .onTapGesture {
-//                                    selectedIndex = index
-//                                }
-//                                .listRowBackground(selectedIndex == index ? Color.gray.opacity(0.3) : mainBgColor) // 高亮选择的项
-//                        }
-//                        .frame(height: .infinity)
-//                        .scrollContentBackground(.hidden)
-//                        // 渐变背景色
-//                        // .background(.linearGradient(colors: [.white, .accentColor], startPoint: .top, endPoint: .bottom))
-//                        .background(mainBgColor)
-                    
-                    LazyVStack(spacing: 0) {
-                        ForEach(whitelistObj.records, id: \.self) { item in
-                                        Button(action: {
-                                            selectedItem = item
-                                        }, label: {
-                                            Text(item)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .frame(height: 0)
-                                                .padding()
-                                                .background(selectedItem == item ? Color.blue.opacity(0.1) : mainBgColor)
-                                                // .cornerRadius(8)     // 圆角
-                                        })
-                                        .buttonStyle(.plain)
-                                        
-                                    }
-                                }
-                    .padding(.all, 0)
-                    
-                    
-                    
-                    Divider()
-                        .padding(.horizontal, 10.0)
-                        .frame(width: 300)
-        
-                    HStack(spacing: 0) {
-                        CButton(text: "+", action: {
-                            FileSelector.openFile(selectApp: {appPath in
-                                AppLog.info("select \(appPath!)")
-                                whitelistObj.append(data: appPath!.path)
-                            })
-                        }, bgColor: Color.clear)
-                        
-                        Text("|")
-                            .foregroundColor(Color(red: 0.65, green: 0.65, blue: 0.75))
-                        
-                        CButton(text: "-", action: {
-                            whitelistObj.remove(data: selectedItem)
-                        }, bgColor: Color.clear)
-                        .disabled(selectedItem == nil)
-                        
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 5)
-                        
-                    
+        MenuPanelCard(
+            title: "白名单",
+            subtitle: subtitleText
+        ) {
+            VStack(spacing: 14) {
+                listContent
+                HStack(spacing: 10) {
+                    MenuInlineActionButton(
+                        title: "添加应用",
+                        systemImage: "plus",
+                        kind: .secondary,
+                        isDisabled: false,
+                        action: model.addWhitelistApp
+                    )
+                    MenuInlineActionButton(
+                        title: "移除所选",
+                        systemImage: "minus",
+                        kind: .primary,
+                        isDisabled: model.selectedWhitelistItem == nil,
+                        action: model.removeSelectedWhitelistItem
+                    )
                 }
-                
             }
-//            .frame(width: 295, height: .infinity)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8) // 设置圆角矩形
-                        .stroke(Color.gray, lineWidth: 1) // 设置边框颜色和宽度
-                )
-            
-            
-            
-            
         }
-            .frame(width: 300)
-            .background(mainBgColor)
-
-        
-
-        
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
+private extension WhitelistSection {
+    var subtitleText: String {
+        model.whitelistItems.isEmpty
+        ? "放行后不会触发二次确认，适合你明确不想拦截的应用。"
+        : "当前已放行 \(model.whitelistItems.count) 个应用，点击条目后可直接移除。"
+    }
 
-
-
-#Preview {
-    BlackView()
+    @ViewBuilder
+    var listContent: some View {
+        if model.whitelistItems.isEmpty {
+            MenuWhitelistEmptyState()
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 10) {
+                    ForEach(model.whitelistItems, id: \.self) { item in
+                        MenuWhitelistRow(
+                            path: item,
+                            isSelected: model.selectedWhitelistItem == item
+                        ) {
+                            model.selectWhitelistItem(item)
+                        }
+                    }
+                }
+            }
+            .frame(height: MenuPanelStyle.whitelistViewportHeight)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
+            )
+        }
+    }
 }
 
+struct MenuWhitelistRow: View {
+    let path: String
+    let isSelected: Bool
+    let action: () -> Void
 
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? MenuPanelStyle.selectedControlFill : Color.white.opacity(0.05))
+                    .frame(width: 42, height: 42)
+                    .overlay(icon)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(MenuPanelStyle.textPrimary)
+                        .lineLimit(1)
+                    Text(path)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(MenuPanelStyle.textMuted)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(MenuPanelStyle.accent)
+                }
+            }
+            .padding(12)
+            .background(rowBackground)
+        }
+        .buttonStyle(.plain)
+    }
+}
 
+private extension MenuWhitelistRow {
+    var appName: String {
+        URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+    }
+
+    var icon: some View {
+        Image(systemName: "app.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(MenuPanelStyle.textPrimary)
+    }
+
+    var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(isSelected ? MenuPanelStyle.accentSoft.opacity(0.55) : Color.white.opacity(0.02))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? MenuPanelStyle.accent.opacity(0.8) : MenuPanelStyle.cardOverlay, lineWidth: 1)
+            )
+    }
+}
+
+struct MenuWhitelistEmptyState: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.shield")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(MenuPanelStyle.accent)
+            Text("还没有放行应用")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(MenuPanelStyle.textPrimary)
+            Text("需要跳过二次确认的应用，可以在这里直接添加。")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(MenuPanelStyle.textMuted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: MenuPanelStyle.whitelistViewportHeight)
+        .padding(.horizontal, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
+        )
+    }
+}
+
+#Preview {
+    WhitelistSection(model: MenuPanelModel())
+}
