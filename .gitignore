@@ -1,3 +1,15 @@
 
+# macOS
 .DS_Store
+
+# Xcode user-specific files
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# Local build artifacts
 build/
+DerivedData/
+.build/
