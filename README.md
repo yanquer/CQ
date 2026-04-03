@@ -21,4 +21,12 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 
 ## 界面预览
 
-![CQ 菜单栏界面](resources/images/2024-01-07-11-54-57.png)
+菜单栏界面
+
+![CQ 菜单栏界面](resources/images/new_cq.png)
+
+
+触发弹窗
+
+![CQ 触发弹窗](resources/images/new_cq_tip.png)
+
