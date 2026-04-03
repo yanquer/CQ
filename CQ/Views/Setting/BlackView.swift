@@ -59,41 +59,42 @@ private extension WhitelistSection {
                 subtitle: "换个应用名或路径关键词试试。"
             )
         } else {
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
-                    ForEach(model.filteredWhitelistItems, id: \.self) { item in
-                        MenuWhitelistRow(
-                            path: item,
-                            isSelected: model.selectedWhitelistItem == item
-                        ) {
-                            model.selectWhitelistItem(item)
+            MenuListViewport {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
+                        ForEach(model.filteredWhitelistItems, id: \.self) { item in
+                            MenuWhitelistRow(
+                                path: item,
+                                isSelected: model.selectedWhitelistItem == item
+                            ) {
+                                model.selectWhitelistItem(item)
+                            }
                         }
                     }
                 }
             }
-            .frame(height: MenuPanelStyle.whitelistViewportHeight)
-            .padding(MenuPanelStyle.whitelistListPadding)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
-            )
         }
     }
 }
 
 struct MenuWhitelistSearchField: View {
     @Binding var text: String
+    let placeholder: String
+
+    init(
+        text: Binding<String>,
+        placeholder: String = "搜索应用名或路径"
+    ) {
+        self._text = text
+        self.placeholder = placeholder
+    }
 
     var body: some View {
         HStack(spacing: MenuPanelStyle.whitelistSearchSpacing) {
             Image(systemName: "magnifyingglass")
                 .font(MenuPanelStyle.whitelistSearchIconFont)
                 .foregroundStyle(MenuPanelStyle.textMuted)
-            TextField("搜索应用名或路径", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .foregroundStyle(MenuPanelStyle.textPrimary)
             if !text.isEmpty {
@@ -118,6 +119,28 @@ private extension MenuWhitelistSearchField {
             .fill(Color.white.opacity(0.03))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
+            )
+    }
+}
+
+struct MenuListViewport<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(height: MenuPanelStyle.whitelistViewportHeight)
+            .padding(MenuPanelStyle.whitelistListPadding)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
             )
     }
@@ -176,6 +199,119 @@ private extension MenuWhitelistRow {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(isSelected ? MenuPanelStyle.accent.opacity(0.8) : MenuPanelStyle.cardOverlay, lineWidth: 1)
             )
+    }
+}
+
+struct MenuAppPickerOverlay: View {
+    @ObservedObject var model: MenuPanelModel
+
+    var body: some View {
+        if model.isShowingAppPicker {
+            ZStack {
+                Color.black.opacity(0.42)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        model.dismissAppPicker()
+                    }
+                MenuAppPickerSheet(model: model)
+                    .padding(14)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: MenuPanelStyle.cornerRadius,
+                    style: .continuous
+                )
+            )
+        }
+    }
+}
+
+struct MenuAppPickerSheet: View {
+    @ObservedObject var model: MenuPanelModel
+
+    var body: some View {
+        MenuPanelCard(
+            title: "选择应用",
+            subtitle: model.appPickerSubtitleText
+        ) {
+            VStack(spacing: MenuPanelStyle.whitelistSectionSpacing) {
+                MenuWhitelistSearchField(
+                    text: $model.appPickerSearchText,
+                    placeholder: "搜索应用名或路径"
+                )
+                listContent
+                HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
+                    MenuInlineActionButton(
+                        title: "从 Finder 选择",
+                        systemImage: "folder",
+                        kind: .secondary,
+                        isDisabled: false,
+                        action: model.addWhitelistAppFromFinder
+                    )
+                    MenuInlineActionButton(
+                        title: "取消",
+                        systemImage: "xmark",
+                        kind: .secondary,
+                        isDisabled: false,
+                        action: model.dismissAppPicker
+                    )
+                    MenuInlineActionButton(
+                        title: "添加到白名单",
+                        systemImage: "checkmark",
+                        kind: .primary,
+                        isDisabled: !model.canConfirmAppPickerSelection,
+                        action: model.confirmAppPickerSelection
+                    )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+}
+
+private extension MenuAppPickerSheet {
+    @ViewBuilder
+    var listContent: some View {
+        if model.isLoadingAppPicker {
+            MenuListViewport {
+                VStack(spacing: MenuPanelStyle.emptyStateSpacing) {
+                    ProgressView()
+                        .tint(MenuPanelStyle.accent)
+                    Text("正在加载应用列表")
+                        .font(MenuPanelStyle.whitelistEmptyTitleFont)
+                        .foregroundStyle(MenuPanelStyle.textPrimary)
+                }
+                .frame(maxWidth: .infinity, minHeight: MenuPanelStyle.whitelistViewportHeight)
+            }
+        } else if model.appPickerItems.isEmpty {
+            MenuWhitelistEmptyState(
+                systemImage: "app.badge.plus",
+                title: "没有找到应用",
+                subtitle: "稍后再试，或者直接从 Finder 里手动选择。"
+            )
+        } else if model.filteredAppPickerItems.isEmpty {
+            MenuWhitelistEmptyState(
+                systemImage: "magnifyingglass",
+                title: "没有匹配结果",
+                subtitle: "换个应用名或路径关键词试试。"
+            )
+        } else {
+            MenuListViewport {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
+                        ForEach(model.filteredAppPickerItems) { item in
+                            MenuWhitelistRow(
+                                path: item.path,
+                                isSelected: model.selectedAppPickerItem == item
+                            ) {
+                                model.selectAppPickerItem(item)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

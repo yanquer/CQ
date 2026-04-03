@@ -8,43 +8,99 @@
 import Foundation
 import Cocoa
 
+struct AppPickerItem: Identifiable, Equatable {
+    let name: String
+    let path: String
+
+    init(url: URL) {
+        self.name = url.deletingPathExtension().lastPathComponent
+        self.path = url.path
+    }
+
+    var id: String {
+        path
+    }
+}
+
+protocol InstalledAppCataloging {
+    func loadApps(refresh: Bool) -> [AppPickerItem]
+}
+
+final class InstalledAppCatalog: InstalledAppCataloging {
+    static let shared = InstalledAppCatalog()
+
+    private let fileManager: FileManager
+    private let appDirectories: [String]
+    private var cachedItems: [AppPickerItem] = []
+
+    init(
+        fileManager: FileManager = .default,
+        appDirectories: [String] = InstalledAppCatalog.defaultDirectories
+    ) {
+        self.fileManager = fileManager
+        self.appDirectories = appDirectories
+    }
+
+    func loadApps(refresh: Bool = false) -> [AppPickerItem] {
+        if !refresh, !cachedItems.isEmpty {
+            return cachedItems
+        }
+        let items = scanInstalledApps()
+        cachedItems = items
+        return items
+    }
+}
+
+private extension InstalledAppCatalog {
+    static var defaultDirectories: [String] {
+        [
+            "/Applications",
+            "\(NSHomeDirectory())/Applications",
+            "/System/Applications"
+        ]
+    }
+
+    func scanInstalledApps() -> [AppPickerItem] {
+        var seen = Set<String>()
+        let items = appDirectories.flatMap(loadApps(in:))
+        return items
+            .filter { seen.insert($0.path).inserted }
+            .sorted(by: compareApps(_:_:))
+    }
+
+    func loadApps(in directory: String) -> [AppPickerItem] {
+        let url = URL(fileURLWithPath: directory, isDirectory: true)
+        guard let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return []
+        }
+        return enumerator.compactMap(makePickerItem(from:))
+    }
+
+    func makePickerItem(from element: Any) -> AppPickerItem? {
+        guard let url = element as? URL else { return nil }
+        guard url.pathExtension.lowercased() == "app" else { return nil }
+        return AppPickerItem(url: url)
+    }
+
+    func compareApps(_ lhs: AppPickerItem, _ rhs: AppPickerItem) -> Bool {
+        let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        if nameOrder == .orderedSame {
+            return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
+        }
+        return nameOrder == .orderedAscending
+    }
+}
+
 final class AppBlack {
     static let this = AppBlack()
 
     private let workspace = NSWorkspace.shared
     private var currentAppPath: String?
     private var activateObserver: NSObjectProtocol?
-    private var cacheBlack: [String] = []
-
-    private static func getAllInstalledApps() -> [URL] {
-        let fileManager = FileManager.default
-        var appURLs: [URL] = []
-        let appDirectories = ["/Applications", "\(NSHomeDirectory())/Applications"]
-
-        for directory in appDirectories {
-            let url = URL(fileURLWithPath: directory)
-            guard let enumerator = fileManager.enumerator(
-                at: url,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            ) else {
-                continue
-            }
-
-            for case let fileURL as URL in enumerator {
-                do {
-                    let values = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
-                    if values.isDirectory == true && fileURL.pathExtension == "app" {
-                        appURLs.append(fileURL)
-                    }
-                } catch {
-                    AppLog.info("读取应用目录失败: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        return appURLs
-    }
 
     func startObservingWorkspace() {
         if activateObserver != nil {
@@ -70,14 +126,6 @@ final class AppBlack {
 
     func refreshCurrentAppPath() {
         currentAppPath = workspace.frontmostApplication?.bundleURL?.path
-    }
-
-    func getAllInstallApps(refresh: Bool = false) -> [String] {
-        if refresh || cacheBlack.isEmpty {
-            cacheBlack = AppBlack.getAllInstalledApps().map(\.path)
-        }
-
-        return cacheBlack
     }
 
     func isCurrentAppBlocked() -> Bool {

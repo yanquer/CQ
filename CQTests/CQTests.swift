@@ -149,7 +149,6 @@ final class CQTests: XCTestCase {
             blackList: makeBlackList(),
             isAutoLaunchEnabled: { false },
             setAutoLaunch: { _ in },
-            selectApp: { _ in },
             quitAction: {}
         )
 
@@ -172,7 +171,6 @@ final class CQTests: XCTestCase {
             blackList: makeBlackList(),
             isAutoLaunchEnabled: { false },
             setAutoLaunch: { _ in },
-            selectApp: { _ in },
             quitAction: {}
         )
 
@@ -270,8 +268,137 @@ final class CQTests: XCTestCase {
         XCTAssertNil(model.selectedWhitelistItem)
     }
 
+    func testInstalledAppCatalogLoadsAppsAcrossDirectoriesAndSortsThem() throws {
+        let root = makeTempDirectoryURL()
+        let apps = root.appendingPathComponent("Applications", isDirectory: true)
+        let homeApps = root.appendingPathComponent("HomeApplications", isDirectory: true)
+        let systemApps = root.appendingPathComponent("SystemApplications", isDirectory: true)
+        try createDirectories([apps, homeApps, systemApps])
+        try createAppBundle(at: apps.appendingPathComponent("Safari.app"))
+        try createAppBundle(at: homeApps.appendingPathComponent("Arc.app"))
+        try createAppBundle(
+            at: systemApps.appendingPathComponent("Utilities/Terminal.app")
+        )
+        try FileManager.default.createDirectory(
+            at: apps.appendingPathComponent("Notes"),
+            withIntermediateDirectories: true
+        )
+
+        let catalog = InstalledAppCatalog(
+            fileManager: .default,
+            appDirectories: [apps.path, homeApps.path, systemApps.path, apps.path]
+        )
+
+        XCTAssertEqual(
+            catalog.loadApps(refresh: true).map(\.path),
+            [
+                homeApps.appendingPathComponent("Arc.app").path,
+                apps.appendingPathComponent("Safari.app").path,
+                systemApps.appendingPathComponent("Utilities/Terminal.app").path
+            ]
+        )
+    }
+
+    func testMenuPanelAppPickerLoadsCatalogItems() {
+        let item = makeAppPickerItem("/Applications/Safari.app")
+        let model = makeMenuPanelModel(
+            records: [],
+            appCatalog: AppCatalogSpy(items: [item])
+        )
+
+        model.addWhitelistApp()
+        waitForAsyncWork()
+
+        XCTAssertTrue(model.isShowingAppPicker)
+        XCTAssertEqual(model.filteredAppPickerItems, [item])
+        XCTAssertFalse(model.isLoadingAppPicker)
+    }
+
+    func testMenuPanelAppPickerSearchMatchesAppNameAndPath() {
+        let terminal = makeAppPickerItem("/System/Applications/Utilities/Terminal.app")
+        let safari = makeAppPickerItem("/Applications/Safari.app")
+        let model = makeMenuPanelModel(
+            records: [],
+            appCatalog: AppCatalogSpy(items: [terminal, safari])
+        )
+
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.appPickerSearchText = "utilities/terminal"
+        XCTAssertEqual(model.filteredAppPickerItems, [terminal])
+
+        model.appPickerSearchText = "safari"
+        XCTAssertEqual(model.filteredAppPickerItems, [safari])
+    }
+
+    func testMenuPanelConfirmAppPickerSelectionAppendsWhitelist() {
+        let safari = makeAppPickerItem("/Applications/Safari.app")
+        let blackList = makeBlackList()
+        let model = makeMenuPanelModel(
+            records: [],
+            blackList: blackList,
+            appCatalog: AppCatalogSpy(items: [safari])
+        )
+
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.selectAppPickerItem(safari)
+        model.confirmAppPickerSelection()
+
+        XCTAssertEqual(blackList.records, [safari.path])
+        XCTAssertFalse(model.isShowingAppPicker)
+    }
+
+    func testMenuPanelFinderPickerCancellationDoesNotWriteWhitelist() {
+        let blackList = makeBlackList()
+        let model = makeMenuPanelModel(
+            records: [],
+            blackList: blackList,
+            appCatalog: AppCatalogSpy(items: []),
+            systemAppPicker: SystemAppPickerSpy(selectedURL: nil)
+        )
+
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.addWhitelistAppFromFinder()
+        waitForAsyncWork()
+
+        XCTAssertTrue(blackList.records.isEmpty)
+        XCTAssertFalse(model.isShowingAppPicker)
+    }
+
     func testMenuButtonEventMaskSupportsLeftAndRightClick() {
         XCTAssertEqual(menuButtonEventMask, [.leftMouseUp, .rightMouseUp])
+    }
+
+    func testMenuPopoverInteractionKeepsStatusButtonClick() {
+        let shouldClose = MenuPopoverInteraction.shouldClose(
+            at: NSPoint(x: 5, y: 5),
+            popoverFrame: NSRect(x: 20, y: 20, width: 100, height: 100),
+            buttonFrame: NSRect(x: 0, y: 0, width: 10, height: 10)
+        )
+
+        XCTAssertFalse(shouldClose)
+    }
+
+    func testMenuPopoverInteractionKeepsPopoverClick() {
+        let shouldClose = MenuPopoverInteraction.shouldClose(
+            at: NSPoint(x: 50, y: 50),
+            popoverFrame: NSRect(x: 20, y: 20, width: 100, height: 100),
+            buttonFrame: NSRect(x: 0, y: 0, width: 10, height: 10)
+        )
+
+        XCTAssertFalse(shouldClose)
+    }
+
+    func testMenuPopoverInteractionClosesOnOutsideClick() {
+        let shouldClose = MenuPopoverInteraction.shouldClose(
+            at: NSPoint(x: 200, y: 200),
+            popoverFrame: NSRect(x: 20, y: 20, width: 100, height: 100),
+            buttonFrame: NSRect(x: 0, y: 0, width: 10, height: 10)
+        )
+
+        XCTAssertTrue(shouldClose)
     }
 }
 
@@ -290,13 +417,20 @@ private extension CQTests {
         return blackList
     }
 
-    func makeMenuPanelModel(records: [String]) -> MenuPanelModel {
+    func makeMenuPanelModel(
+        records: [String],
+        blackList: BlackList? = nil,
+        appCatalog: InstalledAppCataloging = AppCatalogSpy(items: []),
+        systemAppPicker: SystemAppPicking = SystemAppPickerSpy(selectedURL: nil)
+    ) -> MenuPanelModel {
         MenuPanelModel(
             config: makeConfig(),
-            blackList: makeBlackList(records: records),
+            blackList: blackList ?? makeBlackList(records: records),
+            appCatalog: appCatalog,
+            systemAppPicker: systemAppPicker,
+            appCatalogQueue: DispatchQueue(label: "CQTests.appCatalogQueue"),
             isAutoLaunchEnabled: { false },
             setAutoLaunch: { _ in },
-            selectApp: { _ in },
             quitAction: {}
         )
     }
@@ -312,6 +446,36 @@ private extension CQTests {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         return directory.appendingPathComponent("whitelist.json")
+    }
+
+    func makeTempDirectoryURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    func createDirectories(_ urls: [URL]) throws {
+        for url in urls {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+    }
+
+    func createAppBundle(at url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url,
+            withIntermediateDirectories: true
+        )
+    }
+
+    func makeAppPickerItem(_ path: String) -> AppPickerItem {
+        AppPickerItem(url: URL(fileURLWithPath: path))
+    }
+
+    func waitForAsyncWork() {
+        let expectation = expectation(description: "等待异步处理完成")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1)
     }
 
     func makeHandler(isBlockedApp: Bool) -> EventHandler {
@@ -331,5 +495,21 @@ private extension CQTests {
         )!
         event.flags = flags
         return event
+    }
+}
+
+private struct AppCatalogSpy: InstalledAppCataloging {
+    let items: [AppPickerItem]
+
+    func loadApps(refresh: Bool) -> [AppPickerItem] {
+        items
+    }
+}
+
+private struct SystemAppPickerSpy: SystemAppPicking {
+    let selectedURL: URL?
+
+    func pickApp() -> URL? {
+        selectedURL
     }
 }

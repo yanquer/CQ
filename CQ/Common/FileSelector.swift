@@ -5,32 +5,35 @@
 //  Created by 烟雀 on 2024/7/4.
 //
 
-import Foundation
 import Cocoa
+import Foundation
+import UniformTypeIdentifiers
 
+protocol SystemAppPicking {
+    func pickApp() -> URL?
+}
 
-class FileSelector{
-    static func openFile(selectApp: @escaping (URL?) -> Void) {
+struct SystemAppPicker: SystemAppPicking {
+    func pickApp() -> URL? {
         let openPanel = NSOpenPanel()
-        openPanel.title = "Choose a app"
-        openPanel.prompt = "Choose"
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = true
-        openPanel.canChooseFiles = true
-        // openPanel.allowedContentTypes = [.application, .applicationBundle]  // 允许选择的文件类型
-        
-        // 设置起始文件夹为 /Applications
-        let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        openPanel.directoryURL = applicationsURL
-        
-        openPanel.begin { (result) -> Void in
-            if result.rawValue == NSApplication.ModalResponse.OK.rawValue {
-                guard let url = openPanel.url else { return }
-                // 处理选择的文件URL（url）
-                AppLog.info("Selected file: \(url)")
-                selectApp(url)
-            }
-        }
+        configure(openPanel)
+        NSApp.activate(ignoringOtherApps: true)
+        guard openPanel.runModal() == .OK else { return nil }
+        guard let url = openPanel.url else { return nil }
+        AppLog.info("Selected app: \(url.path)")
+        return url
     }
 }
 
+private extension SystemAppPicker {
+    func configure(_ openPanel: NSOpenPanel) {
+        openPanel.title = "选择应用"
+        openPanel.prompt = "添加"
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = false
+        openPanel.canChooseFiles = true
+        openPanel.treatsFilePackagesAsDirectories = false
+        openPanel.allowedContentTypes = [.applicationBundle]
+        openPanel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+    }
+}

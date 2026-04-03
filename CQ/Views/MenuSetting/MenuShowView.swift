@@ -162,7 +162,12 @@ struct MenuPanelStyle {
 }
 
 final class MenuPanelModel: ObservableObject {
-    @Published var selectedTab: MenuPanelTab = .general
+    @Published var selectedTab: MenuPanelTab = .general {
+        didSet {
+            guard selectedTab != .whitelist else { return }
+            dismissAppPicker()
+        }
+    }
     @Published var startAtLogin: Bool
     @Published var doubleTapIntervalDraft: Double
     @Published var alertCloseTimeDraft: Double
@@ -171,39 +176,58 @@ final class MenuPanelModel: ObservableObject {
             refreshFilteredWhitelistItems()
         }
     }
+    @Published var isShowingAppPicker: Bool = false
+    @Published var isLoadingAppPicker: Bool = false
+    @Published var appPickerSearchText: String = "" {
+        didSet {
+            refreshFilteredAppPickerItems()
+        }
+    }
     @Published var selectedWhitelistItem: String?
+    @Published var selectedAppPickerItem: AppPickerItem?
     @Published private(set) var whitelistItems: [String]
     @Published private(set) var filteredWhitelistItems: [String]
+    @Published private(set) var appPickerItems: [AppPickerItem]
+    @Published private(set) var filteredAppPickerItems: [AppPickerItem]
 
     private let config: QuitGuardConfig
     private let blackList: BlackList
+    private let appCatalog: InstalledAppCataloging
+    private let systemAppPicker: SystemAppPicking
+    private let appCatalogQueue: DispatchQueue
     private let setAutoLaunch: (Bool) -> Void
-    private let selectApp: (@escaping (URL?) -> Void) -> Void
     private let quitAction: () -> Void
     private var cancellables: Set<AnyCancellable> = []
 
     init(
         config: QuitGuardConfig = .shared,
         blackList: BlackList = .this,
+        appCatalog: InstalledAppCataloging = InstalledAppCatalog.shared,
+        systemAppPicker: SystemAppPicking = SystemAppPicker(),
+        appCatalogQueue: DispatchQueue = DispatchQueue(
+            label: "com.yq.cq.app-catalog",
+            qos: .userInitiated
+        ),
         isAutoLaunchEnabled: @escaping () -> Bool = { AutoLaunch.isEnabledAutoLaunch },
         setAutoLaunch: @escaping (Bool) -> Void = {
             $0 ? AutoLaunch.enableAutoLaunch() : AutoLaunch.disableAutoLaunch()
-        },
-        selectApp: @escaping (@escaping (URL?) -> Void) -> Void = { completion in
-            FileSelector.openFile(selectApp: completion)
         },
         quitAction: @escaping () -> Void = { NSApplication.shared.terminate(nil) }
     ) {
         self.config = config
         self.blackList = blackList
+        self.appCatalog = appCatalog
+        self.systemAppPicker = systemAppPicker
+        self.appCatalogQueue = appCatalogQueue
         self.setAutoLaunch = setAutoLaunch
-        self.selectApp = selectApp
         self.quitAction = quitAction
         self.startAtLogin = isAutoLaunchEnabled()
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
         self.whitelistItems = blackList.records
         self.filteredWhitelistItems = blackList.records
+        self.appPickerItems = []
+        self.filteredAppPickerItems = []
         bindWhitelist()
     }
 
@@ -227,6 +251,20 @@ final class MenuPanelModel: ObservableObject {
         return "当前已放行 \(whitelistItems.count) 个应用，点击条目后可直接移除。"
     }
 
+    var appPickerSubtitleText: String {
+        if isLoadingAppPicker {
+            return "正在整理已安装应用，请稍候。"
+        }
+        if hasActiveAppPickerSearch {
+            return "共找到 \(appPickerItems.count) 个应用，当前匹配 \(filteredAppPickerItems.count) 个。"
+        }
+        return "直接选择应用即可加入白名单，也可以切到 Finder 手动挑选。"
+    }
+
+    var canConfirmAppPickerSelection: Bool {
+        selectedAppPickerItem != nil && !isLoadingAppPicker
+    }
+
     func toggleLaunchAtLogin(_ isEnabled: Bool) {
         startAtLogin = isEnabled
         setAutoLaunch(isEnabled)
@@ -242,13 +280,36 @@ final class MenuPanelModel: ObservableObject {
     }
 
     func addWhitelistApp() {
-        selectApp { [weak self] url in
-            self?.appendWhitelist(url)
-        }
+        presentAppPicker()
     }
 
     func removeSelectedWhitelistItem() {
         blackList.remove(data: selectedWhitelistItem)
+    }
+
+    func selectAppPickerItem(_ item: AppPickerItem?) {
+        selectedAppPickerItem = item
+    }
+
+    func confirmAppPickerSelection() {
+        appendWhitelist(selectedAppPickerItem?.path)
+        dismissAppPicker()
+    }
+
+    func dismissAppPicker() {
+        isShowingAppPicker = false
+        isLoadingAppPicker = false
+        appPickerSearchText = ""
+        selectedAppPickerItem = nil
+    }
+
+    func addWhitelistAppFromFinder() {
+        dismissAppPicker()
+        DispatchQueue.main.async { [weak self] in
+            // 让选择层先退出，再交给系统面板接管焦点。
+            guard let self else { return }
+            self.appendWhitelist(self.systemAppPicker.pickApp())
+        }
     }
 
     func quitApp() {
@@ -261,8 +322,16 @@ private extension MenuPanelModel {
         !normalizedWhitelistSearchText.isEmpty
     }
 
+    var hasActiveAppPickerSearch: Bool {
+        !normalizedAppPickerSearchText.isEmpty
+    }
+
     var normalizedWhitelistSearchText: String {
-        whitelistSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        normalizedSearchText(from: whitelistSearchText)
+    }
+
+    var normalizedAppPickerSearchText: String {
+        normalizedSearchText(from: appPickerSearchText)
     }
 
     func bindWhitelist() {
@@ -281,7 +350,11 @@ private extension MenuPanelModel {
 
     func appendWhitelist(_ url: URL?) {
         guard let url else { return }
-        blackList.append(data: url.path)
+        appendWhitelist(url.path)
+    }
+
+    func appendWhitelist(_ path: String?) {
+        blackList.append(data: path)
     }
 
     func refreshFilteredWhitelistItems() {
@@ -292,15 +365,14 @@ private extension MenuPanelModel {
     func makeFilteredWhitelistItems() -> [String] {
         let query = normalizedWhitelistSearchText
         guard !query.isEmpty else { return whitelistItems }
-        return whitelistItems.filter { matchesWhitelistSearch(in: $0, query: query) }
+        return whitelistItems.filter { matchesAppSearch(path: $0, query: query) }
     }
 
-    func matchesWhitelistSearch(in item: String, query: String) -> Bool {
-        let appName = URL(fileURLWithPath: item)
-            .deletingPathExtension()
-            .lastPathComponent
-        return appName.localizedCaseInsensitiveContains(query) ||
-            item.localizedCaseInsensitiveContains(query)
+    func presentAppPicker() {
+        isShowingAppPicker = true
+        selectedAppPickerItem = nil
+        appPickerSearchText = ""
+        refreshAppPickerItemsIfNeeded()
     }
 
     func syncSelectedWhitelistItem() {
@@ -309,6 +381,63 @@ private extension MenuPanelModel {
             self.selectedWhitelistItem = nil
             return
         }
+    }
+
+    func refreshAppPickerItemsIfNeeded(refresh: Bool = false) {
+        guard refresh || appPickerItems.isEmpty else {
+            refreshFilteredAppPickerItems()
+            return
+        }
+        isLoadingAppPicker = true
+        appCatalogQueue.async { [weak self] in
+            let items = self?.appCatalog.loadApps(refresh: refresh) ?? []
+            DispatchQueue.main.async {
+                self?.finishLoadingAppPicker(items)
+            }
+        }
+    }
+
+    func finishLoadingAppPicker(_ items: [AppPickerItem]) {
+        appPickerItems = items
+        isLoadingAppPicker = false
+        refreshFilteredAppPickerItems()
+    }
+
+    func refreshFilteredAppPickerItems() {
+        filteredAppPickerItems = makeFilteredAppPickerItems()
+        syncSelectedAppPickerItem()
+    }
+
+    func makeFilteredAppPickerItems() -> [AppPickerItem] {
+        let query = normalizedAppPickerSearchText
+        guard !query.isEmpty else { return appPickerItems }
+        return appPickerItems.filter { matchesAppSearch(item: $0, query: query) }
+    }
+
+    func syncSelectedAppPickerItem() {
+        guard let selectedAppPickerItem else { return }
+        guard filteredAppPickerItems.contains(selectedAppPickerItem) else {
+            self.selectedAppPickerItem = nil
+            return
+        }
+    }
+
+    func matchesAppSearch(item: AppPickerItem, query: String) -> Bool {
+        matchesAppSearch(name: item.name, path: item.path, query: query)
+    }
+
+    func matchesAppSearch(path: String, query: String) -> Bool {
+        let name = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        return matchesAppSearch(name: name, path: path, query: query)
+    }
+
+    func matchesAppSearch(name: String, path: String, query: String) -> Bool {
+        name.localizedCaseInsensitiveContains(query) ||
+            path.localizedCaseInsensitiveContains(query)
+    }
+
+    func normalizedSearchText(from text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -334,6 +463,9 @@ struct MenuPanelScreen: View {
                             alignment: .topLeading
                         )
                         .padding(size.outerPadding)
+                }
+                .overlay {
+                    MenuAppPickerOverlay(model: model)
                 }
                 .padding(MenuPanelStyle.chromePadding)
         }

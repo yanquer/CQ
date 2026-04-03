@@ -11,10 +11,10 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
-    var popOver = NSPopover()
 
     private let config = QuitGuardConfig.shared
     private let state = QuitGuardState()
+    let menuPopoverController = MenuPopoverController()
     private var workspaceObservers: [NSObjectProtocol] = []
 
     private lazy var eventHandler = EventHandler(
