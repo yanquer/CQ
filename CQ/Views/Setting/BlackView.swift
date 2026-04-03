@@ -16,9 +16,9 @@ struct WhitelistSection: View {
             title: "白名单",
             subtitle: subtitleText
         ) {
-            VStack(spacing: 14) {
+            VStack(spacing: MenuPanelStyle.whitelistSectionSpacing) {
                 listContent
-                HStack(spacing: 10) {
+                HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
                     MenuInlineActionButton(
                         title: "添加应用",
                         systemImage: "plus",
@@ -53,7 +53,7 @@ private extension WhitelistSection {
             MenuWhitelistEmptyState()
         } else {
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 10) {
+                LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
                     ForEach(model.whitelistItems, id: \.self) { item in
                         MenuWhitelistRow(
                             path: item,
@@ -65,7 +65,7 @@ private extension WhitelistSection {
                 }
             }
             .frame(height: MenuPanelStyle.whitelistViewportHeight)
-            .padding(8)
+            .padding(MenuPanelStyle.whitelistListPadding)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color.white.opacity(0.03))
@@ -85,18 +85,18 @@ struct MenuWhitelistRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: MenuPanelStyle.whitelistRowSpacing) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(isSelected ? MenuPanelStyle.selectedControlFill : Color.white.opacity(0.05))
-                    .frame(width: 42, height: 42)
+                    .frame(width: MenuPanelStyle.whitelistIconSize, height: MenuPanelStyle.whitelistIconSize)
                     .overlay(icon)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: MenuPanelStyle.textStackSpacing) {
                     Text(appName)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(MenuPanelStyle.whitelistRowTitleFont)
                         .foregroundStyle(MenuPanelStyle.textPrimary)
                         .lineLimit(1)
                     Text(path)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(MenuPanelStyle.whitelistRowPathFont)
                         .foregroundStyle(MenuPanelStyle.textMuted)
                         .lineLimit(2)
                 }
@@ -106,7 +106,7 @@ struct MenuWhitelistRow: View {
                         .foregroundStyle(MenuPanelStyle.accent)
                 }
             }
-            .padding(12)
+            .padding(MenuPanelStyle.whitelistRowPadding)
             .background(rowBackground)
         }
         .buttonStyle(.plain)
@@ -120,7 +120,7 @@ private extension MenuWhitelistRow {
 
     var icon: some View {
         Image(systemName: "app.fill")
-            .font(.system(size: 17, weight: .semibold))
+            .font(MenuPanelStyle.whitelistIconFont)
             .foregroundStyle(MenuPanelStyle.textPrimary)
     }
 
@@ -136,20 +136,20 @@ private extension MenuWhitelistRow {
 
 struct MenuWhitelistEmptyState: View {
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: MenuPanelStyle.emptyStateSpacing) {
             Image(systemName: "checkmark.shield")
-                .font(.system(size: 28, weight: .semibold))
+                .font(MenuPanelStyle.whitelistEmptyIconFont)
                 .foregroundStyle(MenuPanelStyle.accent)
             Text("还没有放行应用")
-                .font(.system(size: 15, weight: .semibold))
+                .font(MenuPanelStyle.whitelistEmptyTitleFont)
                 .foregroundStyle(MenuPanelStyle.textPrimary)
             Text("需要跳过二次确认的应用，可以在这里直接添加。")
-                .font(.system(size: 11, weight: .medium))
+                .font(MenuPanelStyle.whitelistEmptySubtitleFont)
                 .foregroundStyle(MenuPanelStyle.textMuted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: MenuPanelStyle.whitelistViewportHeight)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, MenuPanelStyle.emptyStateHorizontalPadding)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.white.opacity(0.03))

@@ -35,8 +35,8 @@
 		6D89FD0F2B43E512001FDDEB /* MenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89FD0E2B43E512001FDDEB /* MenuButton.swift */; };
 		6D89FD112B43E59D001FDDEB /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89FD102B43E59D001FDDEB /* MenuView.swift */; };
 		6D89FD142B456224001FDDEB /* AutoLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89FD132B456224001FDDEB /* AutoLaunch.swift */; };
-		6D8EC7C72B49A6EC00AA1580 /* README.rst in Resources */ = {isa = PBXBuildFile; fileRef = 6D8EC7C62B49A6EC00AA1580 /* README.rst */; };
-		6D8EC7C92B49A80C00AA1580 /* CHANGELOG.rst in Resources */ = {isa = PBXBuildFile; fileRef = 6D8EC7C82B49A80C00AA1580 /* CHANGELOG.rst */; };
+		6D8EC7C72B49A6EC00AA1580 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6D8EC7C62B49A6EC00AA1580 /* README.md */; };
+		6D8EC7C92B49A80C00AA1580 /* CHANGELOG.md in Resources */ = {isa = PBXBuildFile; fileRef = 6D8EC7C82B49A80C00AA1580 /* CHANGELOG.md */; };
 		6DA295D42B248D1A0017735C /* TipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA295D32B248D1A0017735C /* TipView.swift */; };
 		6DCF6EFD2B42F90100361F4C /* BaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DCF6EFC2B42F90100361F4C /* BaseView.swift */; };
 /* End PBXBuildFile section */
@@ -92,8 +92,8 @@
 		6D89FD102B43E59D001FDDEB /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		6D89FD122B455A42001FDDEB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6D89FD132B456224001FDDEB /* AutoLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoLaunch.swift; sourceTree = "<group>"; };
-		6D8EC7C62B49A6EC00AA1580 /* README.rst */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.rst; sourceTree = SOURCE_ROOT; };
-		6D8EC7C82B49A80C00AA1580 /* CHANGELOG.rst */ = {isa = PBXFileReference; lastKnownFileType = text; path = CHANGELOG.rst; sourceTree = SOURCE_ROOT; };
+		6D8EC7C62B49A6EC00AA1580 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = SOURCE_ROOT; };
+		6D8EC7C82B49A80C00AA1580 /* CHANGELOG.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CHANGELOG.md; sourceTree = SOURCE_ROOT; };
 		6DA295D32B248D1A0017735C /* TipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TipView.swift; sourceTree = "<group>"; };
 		6DCF6EFC2B42F90100361F4C /* BaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -146,8 +146,8 @@
 		6D40FA622B20AC6100E0142A /* CQ */ = {
 			isa = PBXGroup;
 			children = (
-				6D8EC7C82B49A80C00AA1580 /* CHANGELOG.rst */,
-				6D8EC7C62B49A6EC00AA1580 /* README.rst */,
+				6D8EC7C82B49A80C00AA1580 /* CHANGELOG.md */,
+				6D8EC7C62B49A6EC00AA1580 /* README.md */,
 				6D8EC7C52B4995E000AA1580 /* StartAtLogin */,
 				6D89FD122B455A42001FDDEB /* Info.plist */,
 				6D64DA152C364CA800BA0FB2 /* Components */,
@@ -390,9 +390,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6D8EC7C92B49A80C00AA1580 /* CHANGELOG.rst in Resources */,
+				6D8EC7C92B49A80C00AA1580 /* CHANGELOG.md in Resources */,
 				6D40FA6D2B20AC6200E0142A /* Preview Assets.xcassets in Resources */,
-				6D8EC7C72B49A6EC00AA1580 /* README.rst in Resources */,
+				6D8EC7C72B49A6EC00AA1580 /* README.md in Resources */,
 				6D40FA6A2B20AC6200E0142A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

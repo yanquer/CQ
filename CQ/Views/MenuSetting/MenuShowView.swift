@@ -59,22 +59,66 @@ enum MenuPanelSize {
     var outerPadding: CGFloat {
         switch self {
         case .popover:
-            return 18
+            return MenuPanelStyle.popoverOuterPadding
         case .expanded:
-            return 24
+            return MenuPanelStyle.expandedOuterPadding
         }
     }
 }
 
 struct MenuPanelStyle {
     static let popoverWidth: CGFloat = 416
-    static let popoverHeight: CGFloat = 560
+    static let popoverHeight: CGFloat = 620
     static let windowWidth: CGFloat = 484
-    static let windowHeight: CGFloat = 640
-    static let whitelistViewportHeight: CGFloat = 250
+    static let windowHeight: CGFloat = 700
+    static let whitelistViewportHeight: CGFloat = 220
+    static let popoverOuterPadding: CGFloat = 16
+    static let expandedOuterPadding: CGFloat = 20
+    static let chromePadding: CGFloat = 8
     static let cornerRadius: CGFloat = 26
     static let cardCornerRadius: CGFloat = 20
-    static let sectionSpacing: CGFloat = 14
+    static let sectionSpacing: CGFloat = 12
+    static let cardSpacing: CGFloat = 12
+    static let cardPadding: CGFloat = 14
+    static let textStackSpacing: CGFloat = 4
+    static let headerSpacing: CGFloat = 8
+    static let headerTitleRowSpacing: CGFloat = 12
+    static let headerIconSize: CGFloat = 48
+    static let segmentedSpacing: CGFloat = 8
+    static let segmentedContainerPadding: CGFloat = 6
+    static let segmentedVerticalPadding: CGFloat = 8
+    static let actionBarSpacing: CGFloat = 12
+    static let actionButtonVerticalPadding: CGFloat = 10
+    static let actionButtonHorizontalPadding: CGFloat = 12
+    static let settingGroupSpacing: CGFloat = 12
+    static let settingRowSpacing: CGFloat = 14
+    static let sliderHeaderSpacing: CGFloat = 12
+    static let sliderRowSpacing: CGFloat = 10
+    static let valuePillHorizontalPadding: CGFloat = 9
+    static let valuePillVerticalPadding: CGFloat = 5
+    static let whitelistSectionSpacing: CGFloat = 12
+    static let whitelistListSpacing: CGFloat = 10
+    static let whitelistListPadding: CGFloat = 8
+    static let whitelistButtonSpacing: CGFloat = 10
+    static let whitelistRowSpacing: CGFloat = 12
+    static let whitelistRowPadding: CGFloat = 10
+    static let whitelistIconSize: CGFloat = 38
+    static let emptyStateSpacing: CGFloat = 10
+    static let emptyStateHorizontalPadding: CGFloat = 18
+    static let headerTitleFont: Font = .system(size: 22, weight: .bold, design: .rounded)
+    static let headerSubtitleFont: Font = .system(size: 10, weight: .medium)
+    static let segmentedLabelFont: Font = .system(size: 12, weight: .semibold)
+    static let cardTitleFont: Font = .system(size: 14, weight: .semibold)
+    static let helperFont: Font = .system(size: 10, weight: .medium)
+    static let settingTitleFont: Font = .system(size: 13, weight: .semibold)
+    static let valuePillFont: Font = .system(size: 10, weight: .semibold)
+    static let actionButtonFont: Font = .system(size: 12, weight: .semibold)
+    static let whitelistRowTitleFont: Font = .system(size: 13, weight: .semibold)
+    static let whitelistRowPathFont: Font = .system(size: 10, weight: .medium)
+    static let whitelistIconFont: Font = .system(size: 16, weight: .semibold)
+    static let whitelistEmptyIconFont: Font = .system(size: 28, weight: .semibold)
+    static let whitelistEmptyTitleFont: Font = .system(size: 14, weight: .semibold)
+    static let whitelistEmptySubtitleFont: Font = .system(size: 10, weight: .medium)
     static let panelBackground = LinearGradient(
         colors: [
             Color(red: 0.23, green: 0.13, blue: 0.17),
@@ -237,7 +281,7 @@ struct MenuPanelScreen: View {
                         )
                         .padding(size.outerPadding)
                 }
-                .padding(10)
+                .padding(MenuPanelStyle.chromePadding)
         }
         .frame(width: size.width, height: size.height)
         .preferredColorScheme(.dark)
@@ -283,10 +327,8 @@ struct MenuPanelContentViewport<Content: View>: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            content
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -296,16 +338,16 @@ struct MenuPanelHeader: View {
     let subtitle: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 14) {
+        VStack(alignment: .leading, spacing: MenuPanelStyle.headerSpacing) {
+            HStack(alignment: .center, spacing: MenuPanelStyle.headerTitleRowSpacing) {
                 appIcon
                 Text(title)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(MenuPanelStyle.headerTitleFont)
                     .foregroundStyle(MenuPanelStyle.textPrimary)
                     .layoutPriority(1)
             }
             Text(subtitle)
-                .font(.system(size: 10, weight: .medium))
+                .font(MenuPanelStyle.headerSubtitleFont)
                 .foregroundStyle(MenuPanelStyle.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -333,7 +375,7 @@ private extension MenuPanelHeader {
                 .scaledToFit()
                 .padding(8)
         }
-        .frame(width: 52, height: 52)
+        .frame(width: MenuPanelStyle.headerIconSize, height: MenuPanelStyle.headerIconSize)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
@@ -345,22 +387,22 @@ struct MenuPanelSegmentedControl: View {
     @Binding var selectedTab: MenuPanelTab
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: MenuPanelStyle.segmentedSpacing) {
             ForEach(MenuPanelTab.allCases) { tab in
                 Button {
                     selectedTab = tab
                 } label: {
                     Text(tab.rawValue)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(MenuPanelStyle.segmentedLabelFont)
                         .foregroundStyle(textColor(for: tab))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, MenuPanelStyle.segmentedVerticalPadding)
                         .background(tabBackground(for: tab))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(6)
+        .padding(MenuPanelStyle.segmentedContainerPadding)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(MenuPanelStyle.controlFill)
@@ -405,19 +447,19 @@ struct MenuPanelCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: MenuPanelStyle.cardSpacing) {
+            VStack(alignment: .leading, spacing: MenuPanelStyle.textStackSpacing) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(MenuPanelStyle.cardTitleFont)
                     .foregroundStyle(MenuPanelStyle.textPrimary)
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(MenuPanelStyle.helperFont)
                     .foregroundStyle(MenuPanelStyle.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             content
         }
-        .padding(16)
+        .padding(MenuPanelStyle.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: MenuPanelStyle.cardCornerRadius, style: .continuous)
@@ -434,7 +476,7 @@ struct MenuActionBar: View {
     @ObservedObject var model: MenuPanelModel
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: MenuPanelStyle.actionBarSpacing) {
             MenuInlineActionButton(
                 title: "退出",
                 systemImage: "power",
@@ -469,11 +511,11 @@ struct MenuInlineActionButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.system(size: 13, weight: .semibold))
+                .font(MenuPanelStyle.actionButtonFont)
                 .foregroundStyle(foregroundColor)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
+                .padding(.vertical, MenuPanelStyle.actionButtonVerticalPadding)
+                .padding(.horizontal, MenuPanelStyle.actionButtonHorizontalPadding)
                 .background(backgroundView)
                 .overlay(borderView)
         }

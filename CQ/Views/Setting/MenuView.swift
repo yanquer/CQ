@@ -31,7 +31,7 @@ struct GeneralSettingsSection: View {
                 title: "退出保护行为",
                 subtitle: "改的是保护节奏，点击“应用更改”后才会写回配置。"
             ) {
-                VStack(spacing: 16) {
+                VStack(spacing: MenuPanelStyle.settingGroupSpacing) {
                     MenuSettingSliderRow(
                         title: "CMD+Q 最长间隔时间",
                         subtitle: "两次按键在这个时长内会被视为确认退出。",
@@ -55,13 +55,13 @@ struct MenuSettingToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: MenuPanelStyle.settingRowSpacing) {
+            VStack(alignment: .leading, spacing: MenuPanelStyle.textStackSpacing) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(MenuPanelStyle.settingTitleFont)
                     .foregroundStyle(MenuPanelStyle.textPrimary)
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(MenuPanelStyle.helperFont)
                     .foregroundStyle(MenuPanelStyle.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -80,14 +80,14 @@ struct MenuSettingSliderRow: View {
     @Binding var value: Double
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: MenuPanelStyle.sliderRowSpacing) {
+            HStack(alignment: .top, spacing: MenuPanelStyle.sliderHeaderSpacing) {
+                VStack(alignment: .leading, spacing: MenuPanelStyle.textStackSpacing) {
                     Text(title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(MenuPanelStyle.settingTitleFont)
                         .foregroundStyle(MenuPanelStyle.textPrimary)
                     Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(MenuPanelStyle.helperFont)
                         .foregroundStyle(MenuPanelStyle.textMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -105,10 +105,10 @@ struct MenuSettingValuePill: View {
 
     var body: some View {
         Text("\(Int(value)) 秒")
-            .font(.system(size: 11, weight: .semibold))
+            .font(MenuPanelStyle.valuePillFont)
             .foregroundStyle(MenuPanelStyle.textPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, MenuPanelStyle.valuePillHorizontalPadding)
+            .padding(.vertical, MenuPanelStyle.valuePillVerticalPadding)
             .background(
                 Capsule()
                     .fill(MenuPanelStyle.selectedControlFill)
