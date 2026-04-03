@@ -9,14 +9,24 @@
 
 import Foundation
 import AppKit
+import SwiftUI
+
+private final class TipPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
 
 final class EventTapController {
     private let config: QuitGuardConfig
     private let handler: EventHandler
+    private let tipAnimationDuration: TimeInterval = 0.18
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var tipWindow: NSWindow?
+    private var tipWindow: TipPanel?
+    private var tipModel: TipOverlayModel?
+    private var tipCloseWorkItem: DispatchWorkItem?
+    private var tipDismissWorkItem: DispatchWorkItem?
 
     init(config: QuitGuardConfig, handler: EventHandler) {
         self.config = config
@@ -34,7 +44,7 @@ final class EventTapController {
 
     func stop() {
         handler.resetRuntimeState()
-        closeTipWindow()
+        destroyTipWindow()
         removeTap()
     }
 
@@ -93,18 +103,21 @@ final class EventTapController {
         }
     }
 
-    private func presentTip(_ prompt: String, duration: TimeInterval) {
+    private func presentTip(_ prompt: QuitPrompt, duration: TimeInterval) {
         DispatchQueue.main.async { [weak self] in
-            self?.tipWindow?.close()
-            self?.tipWindow = TipView(alertText: prompt)
-                .showViewOnNewWindowInSpecificTime(during: CGFloat(duration))
+            self?.presentTipOnMainThread(prompt, duration: duration)
         }
     }
 
     private func closeTipWindow() {
         DispatchQueue.main.async { [weak self] in
-            self?.tipWindow?.close()
-            self?.tipWindow = nil
+            self?.dismissTipWindow(releaseResources: false)
+        }
+    }
+
+    private func destroyTipWindow() {
+        DispatchQueue.main.async { [weak self] in
+            self?.dismissTipWindow(releaseResources: true)
         }
     }
 
@@ -147,5 +160,148 @@ final class EventTapController {
 
         let controller = Unmanaged<EventTapController>.fromOpaque(ref).takeUnretainedValue()
         return controller.handle(event: event, eventType: type)
+    }
+}
+
+private extension EventTapController {
+    var prefersReducedMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    var tipDismissAnimationDuration: TimeInterval {
+        prefersReducedMotion ? 0 : tipAnimationDuration
+    }
+
+    var tipWindowSize: CGSize {
+        CGSize(width: TipViewSize.width, height: TipViewSize.height)
+    }
+
+    var currentTipScreen: NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+    }
+
+    func presentTipOnMainThread(_ prompt: QuitPrompt, duration: TimeInterval) {
+        tipDismissWorkItem?.cancel()
+
+        let window = ensureTipWindow(prompt: prompt, duration: duration)
+        positionTipWindow(window)
+        window.alphaValue = 1
+        window.orderFrontRegardless()
+
+        let shouldAnimateIn = !(tipModel?.isVisible ?? false)
+        tipModel?.present(
+            prompt: prompt,
+            duration: duration,
+            animateIn: shouldAnimateIn
+        )
+        scheduleTipClose(after: duration)
+    }
+
+    func dismissTipWindow(releaseResources: Bool) {
+        tipCloseWorkItem?.cancel()
+        tipCloseWorkItem = nil
+        tipDismissWorkItem?.cancel()
+        tipDismissWorkItem = nil
+
+        guard let tipWindow else {
+            if releaseResources {
+                tipModel = nil
+            }
+            return
+        }
+
+        let cleanup = { [weak self] in
+            guard let self else { return }
+            if releaseResources {
+                self.tipWindow?.close()
+                self.tipWindow = nil
+                self.tipModel = nil
+            } else {
+                tipWindow.orderOut(nil)
+            }
+        }
+
+        let shouldAnimateOut = tipDismissAnimationDuration > 0 && (tipModel?.isVisible ?? false)
+        tipModel?.dismiss()
+
+        guard shouldAnimateOut else {
+            cleanup()
+            return
+        }
+
+        let workItem = DispatchWorkItem(block: cleanup)
+        tipDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + tipDismissAnimationDuration,
+            execute: workItem
+        )
+    }
+
+    func scheduleTipClose(after duration: TimeInterval) {
+        tipCloseWorkItem?.cancel()
+        tipCloseWorkItem = nil
+
+        guard duration > 0 else { return }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.dismissTipWindow(releaseResources: false)
+        }
+        tipCloseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+
+    func ensureTipWindow(prompt: QuitPrompt, duration: TimeInterval) -> TipPanel {
+        if let tipWindow {
+            return tipWindow
+        }
+
+        let model = TipOverlayModel(
+            presentation: TipPresentation(
+                prompt: prompt,
+                duration: duration
+            )
+        )
+        let hostingController = NSHostingController(rootView: TipView(model: model))
+        let window = TipPanel(
+            contentRect: CGRect(origin: .zero, size: tipWindowSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.contentViewController = hostingController
+        configureTipWindow(window)
+
+        tipModel = model
+        tipWindow = window
+        return window
+    }
+
+    func configureTipWindow(_ window: TipPanel) {
+        window.level = .mainMenu
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.isMovable = false
+        window.hidesOnDeactivate = false
+        window.ignoresMouseEvents = true
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+    }
+
+    func positionTipWindow(_ window: NSWindow) {
+        guard let screen = currentTipScreen else { return }
+
+        let visibleFrame = screen.visibleFrame
+        let origin = CGPoint(
+            x: visibleFrame.midX - (tipWindowSize.width / 2),
+            y: visibleFrame.midY - (tipWindowSize.height / 2)
+        )
+
+        window.setFrame(
+            CGRect(origin: origin, size: tipWindowSize),
+            display: true
+        )
     }
 }

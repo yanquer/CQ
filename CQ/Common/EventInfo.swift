@@ -91,8 +91,64 @@ final class QuitGuardConfig {
 
 enum QuitDecision: Equatable {
     case pass
-    case blockAndPrompt(String)
-    case passAndReset(String?)
+    case blockAndPrompt(QuitPrompt)
+    case passAndReset(QuitPrompt?)
+}
+
+enum QuitPrompt: Equatable {
+    case confirmExit(window: TimeInterval)
+    case ignoredLongPress
+}
+
+extension QuitPrompt {
+    var title: String {
+        switch self {
+        case .confirmExit:
+            return "已拦截 Cmd+Q"
+        case .ignoredLongPress:
+            return "已忽略长按 Cmd+Q"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .confirmExit(let window):
+            return "\(displaySeconds(for: window)) 秒内再按一次即可退出"
+        case .ignoredLongPress:
+            return "松开后重新按下，才会计入退出确认"
+        }
+    }
+
+    var badgeText: String? {
+        switch self {
+        case .confirmExit:
+            return "⌘Q"
+        case .ignoredLongPress:
+            return nil
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .confirmExit:
+            return "keyboard"
+        case .ignoredLongPress:
+            return "hand.tap.fill"
+        }
+    }
+
+    var showsProgress: Bool {
+        switch self {
+        case .confirmExit:
+            return true
+        case .ignoredLongPress:
+            return false
+        }
+    }
+
+    private func displaySeconds(for window: TimeInterval) -> Int {
+        max(1, Int(window.rounded(.up)))
+    }
 }
 
 final class QuitGuardState {
@@ -110,12 +166,12 @@ final class QuitGuardState {
     func handleCommandQKeyDown(now: TimeInterval, config: QuitGuardConfig) -> QuitDecision {
         if updateLongPress(now: now) {
             reset()
-            return .passAndReset("检测到为长按事件, 忽略")
+            return .passAndReset(.ignoredLongPress)
         }
 
         if !isAwaitingSecondPress {
             beginAwaitingSecondPress(timeout: config.doubleTapInterval)
-            return .blockAndPrompt("请再点击一次 CMD+Q 以退出")
+            return .blockAndPrompt(.confirmExit(window: config.doubleTapInterval))
         }
 
         reset()

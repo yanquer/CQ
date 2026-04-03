@@ -14,7 +14,6 @@ struct AppColor{
 }
 
 struct TipViewSize{
-    static let width: CGFloat = 300
-    static let height: CGFloat = 100
+    static let width: CGFloat = 356
+    static let height: CGFloat = 128
 }
-

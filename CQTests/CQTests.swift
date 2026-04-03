@@ -40,7 +40,7 @@ final class CQTests: XCTestCase {
 
         let decision = state.handleCommandQKeyDown(now: 1_000, config: config)
 
-        XCTAssertEqual(decision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        XCTAssertEqual(decision, .blockAndPrompt(.confirmExit(window: 3)))
         XCTAssertTrue(state.isAwaitingSecondPress)
     }
 
@@ -70,7 +70,7 @@ final class CQTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
 
         let decision = state.handleCommandQKeyDown(now: 2_000, config: config)
-        XCTAssertEqual(decision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        XCTAssertEqual(decision, .blockAndPrompt(.confirmExit(window: 0.05)))
     }
 
     func testLongPressDoesNotBecomeSecondConfirmation() {
@@ -82,8 +82,8 @@ final class CQTests: XCTestCase {
         state.markKeyUp()
         let nextPress = state.handleCommandQKeyDown(now: 2_000, config: config)
 
-        XCTAssertEqual(longPress, .passAndReset("检测到为长按事件, 忽略"))
-        XCTAssertEqual(nextPress, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        XCTAssertEqual(longPress, .passAndReset(.ignoredLongPress))
+        XCTAssertEqual(nextPress, .blockAndPrompt(.confirmExit(window: 3)))
     }
 
     func testBlacklistedAppAlwaysPasses() {
@@ -113,7 +113,7 @@ final class CQTests: XCTestCase {
             eventType: .keyDown
         )
 
-        XCTAssertEqual(firstDecision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        XCTAssertEqual(firstDecision, .blockAndPrompt(.confirmExit(window: 3)))
         handler.resetRuntimeState()
 
         let secondDecision = handler.decision(
@@ -121,7 +121,25 @@ final class CQTests: XCTestCase {
             eventType: .keyDown
         )
 
-        XCTAssertEqual(secondDecision, .blockAndPrompt("请再点击一次 CMD+Q 以退出"))
+        XCTAssertEqual(secondDecision, .blockAndPrompt(.confirmExit(window: 3)))
+    }
+
+    func testConfirmExitPromptCarriesReadableCopyAndProgress() {
+        let prompt = QuitPrompt.confirmExit(window: 3)
+
+        XCTAssertEqual(prompt.title, "已拦截 Cmd+Q")
+        XCTAssertEqual(prompt.message, "3 秒内再按一次即可退出")
+        XCTAssertEqual(prompt.badgeText, "⌘Q")
+        XCTAssertTrue(prompt.showsProgress)
+    }
+
+    func testIgnoredLongPressPromptUsesSecondaryStyle() {
+        let prompt = QuitPrompt.ignoredLongPress
+
+        XCTAssertEqual(prompt.title, "已忽略长按 Cmd+Q")
+        XCTAssertEqual(prompt.message, "松开后重新按下，才会计入退出确认")
+        XCTAssertNil(prompt.badgeText)
+        XCTAssertFalse(prompt.showsProgress)
     }
 
     func testMenuPanelDraftsOnlyWriteAfterApply() {
