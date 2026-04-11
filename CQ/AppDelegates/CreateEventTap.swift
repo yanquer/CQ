@@ -16,9 +16,17 @@ private final class TipPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-final class EventTapController {
+final class EventTapController: QuitGuardControlling {
+    typealias EventTapCreator = (
+        CGEventTapCallBack,
+        UnsafeMutableRawPointer?,
+        CGEventMask
+    ) -> CFMachPort?
+
     private let config: QuitGuardConfig
     private let handler: EventHandler
+    private let statusHandler: (QuitGuardRuntimeStatus) -> Void
+    private let tapCreator: EventTapCreator
     private let tipAnimationDuration: TimeInterval = 0.18
 
     private var tap: CFMachPort?
@@ -28,57 +36,75 @@ final class EventTapController {
     private var tipCloseWorkItem: DispatchWorkItem?
     private var tipDismissWorkItem: DispatchWorkItem?
 
-    init(config: QuitGuardConfig, handler: EventHandler) {
+    init(
+        config: QuitGuardConfig,
+        handler: EventHandler,
+        statusHandler: @escaping (QuitGuardRuntimeStatus) -> Void = { _ in },
+        tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator
+    ) {
         self.config = config
         self.handler = handler
+        self.statusHandler = statusHandler
+        self.tapCreator = tapCreator
     }
 
-    func start() {
+    /// 启动事件拦截，并返回当前是否已经成功建立 tap。
+    /// - Returns: 事件拦截是否可用。
+    func start() -> Bool {
         if tap != nil {
+            AppLog.info("event tap 已存在，直接尝试启用")
             enableTap()
-            return
+            return true
         }
 
-        createTap()
+        AppLog.info("开始创建 event tap")
+        return createTap()
     }
 
     func stop() {
+        AppLog.info("停止 event tap 并清理运行态")
         handler.resetRuntimeState()
         destroyTipWindow()
         removeTap()
     }
 
-    func refresh() {
+    /// 重建事件拦截，并返回恢复结果。
+    /// - Returns: 事件拦截是否恢复成功。
+    func refresh() -> Bool {
+        AppLog.info("开始重建 event tap")
         stop()
-        start()
+        return start()
     }
 
-    private func createTap() {
+    /// 创建底层 event tap，并在失败时回传运行状态。
+    /// - Returns: event tap 是否创建成功。
+    private func createTap() -> Bool {
         let callback = EventTapController.tapCallback
         let ref = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: makeEventMask(),
-            callback: callback,
-            userInfo: ref
-        )
+        tap = tapCreator(callback, ref, makeEventMask())
 
         guard let tap else {
             AppLog.info("创建 event tap 失败")
-            return
+            statusHandler(.tapCreateFailed)
+            return false
         }
 
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        guard let runLoopSource else { return }
+        guard let runLoopSource else {
+            AppLog.info("创建 event tap run loop source 失败")
+            removeTap()
+            statusHandler(.tapCreateFailed)
+            return false
+        }
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         enableTap()
+        AppLog.info("event tap 创建成功并已加入主运行循环")
+        return true
     }
 
     private func handle(event: CGEvent, eventType: CGEventType) -> Unmanaged<CGEvent>? {
         if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
-            recoverTap(eventType)
+            handleTapDisabled(eventType)
             return .passUnretained(event)
         }
 
@@ -121,11 +147,20 @@ final class EventTapController {
         }
     }
 
-    private func recoverTap(_ eventType: CGEventType) {
+    /// 处理系统停用 event tap 的恢复流程，并把结果写回运行状态。
+    /// - Parameter eventType: 系统返回的停用事件类型。
+    func handleTapDisabled(_ eventType: CGEventType) {
         AppLog.info("event tap 已停用: \(eventType.rawValue)")
+        statusHandler(.tapDisabled)
         // 休眠唤醒后系统可能直接停用 tap，直接重建会比单纯 enable 更稳。
         DispatchQueue.main.async { [weak self] in
-            self?.refresh()
+            guard let self else { return }
+            if self.refresh() {
+                AppLog.info("event tap 恢复成功")
+                self.statusHandler(.ready)
+            } else {
+                AppLog.error("event tap 恢复失败")
+            }
         }
     }
 
@@ -151,6 +186,28 @@ final class EventTapController {
     private func enableTap() {
         guard let tap else { return }
         CGEvent.tapEnable(tap: tap, enable: true)
+        AppLog.info("event tap 已启用")
+    }
+
+    /// 构造默认的系统级 event tap 创建逻辑。
+    /// - Parameters:
+    ///   - callback: event tap 回调。
+    ///   - userInfo: 回调透传上下文。
+    ///   - eventMask: 需要监听的事件掩码。
+    /// - Returns: 系统返回的 event tap 端口。
+    private static func defaultTapCreator(
+        callback: @escaping CGEventTapCallBack,
+        userInfo: UnsafeMutableRawPointer?,
+        eventMask: CGEventMask
+    ) -> CFMachPort? {
+        CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: eventMask,
+            callback: callback,
+            userInfo: userInfo
+        )
     }
 
     private static let tapCallback: CGEventTapCallBack = { _, type, event, ref in

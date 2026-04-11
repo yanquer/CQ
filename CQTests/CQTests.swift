@@ -142,6 +142,254 @@ final class CQTests: XCTestCase {
         XCTAssertFalse(prompt.showsProgress)
     }
 
+    /// 验证仅缺辅助功能权限时会返回对应缺失项。
+    func testQuitGuardPermissionServiceMarksAccessibilityMissing() {
+        let service = QuitGuardPermissionService(
+            accessibilityChecker: { _ in false },
+            listenEventChecker: { true },
+            listenEventRequester: { true }
+        )
+
+        let availability = service.currentAvailability(promptAccessibility: false)
+        XCTAssertEqual(availability.missingPermissions, [.accessibility])
+        XCTAssertFalse(availability.canStartIntercepting)
+    }
+
+    /// 验证仅缺事件监听权限时会返回对应缺失项。
+    func testQuitGuardPermissionServiceMarksListenEventMissing() {
+        let service = QuitGuardPermissionService(
+            accessibilityChecker: { _ in true },
+            listenEventChecker: { false },
+            listenEventRequester: { false }
+        )
+
+        let availability = service.currentAvailability(promptAccessibility: false)
+        XCTAssertEqual(availability.missingPermissions, [.listenEvent])
+        XCTAssertFalse(availability.canStartIntercepting)
+    }
+
+    /// 验证两项权限都缺失时会完整返回缺失列表。
+    func testQuitGuardPermissionServiceMarksAllPermissionsMissing() {
+        let service = QuitGuardPermissionService(
+            accessibilityChecker: { _ in false },
+            listenEventChecker: { false },
+            listenEventRequester: { false }
+        )
+
+        let availability = service.currentAvailability(promptAccessibility: false)
+        XCTAssertEqual(availability.missingPermissions, [.accessibility, .listenEvent])
+        XCTAssertFalse(availability.canStartIntercepting)
+    }
+
+    /// 验证两项权限满足时退出保护可以启动。
+    func testQuitGuardPermissionServiceMarksAvailabilityReady() {
+        let service = QuitGuardPermissionService(
+            accessibilityChecker: { _ in true },
+            listenEventChecker: { true },
+            listenEventRequester: { true }
+        )
+
+        let availability = service.currentAvailability(promptAccessibility: false)
+        XCTAssertTrue(availability.missingPermissions.isEmpty)
+        XCTAssertTrue(availability.canStartIntercepting)
+    }
+
+    /// 验证请求事件监听权限成功后会返回最新权限快照。
+    func testQuitGuardPermissionServiceUpdatesAvailabilityAfterListenAccessRequest() {
+        var hasListenEventAccess = false
+        let service = QuitGuardPermissionService(
+            accessibilityChecker: { _ in true },
+            listenEventChecker: { hasListenEventAccess },
+            listenEventRequester: {
+                hasListenEventAccess = true
+                return true
+            }
+        )
+
+        let availability = service.requestListenEventAccess()
+        XCTAssertTrue(availability.hasListenEventAccess)
+        XCTAssertTrue(availability.canStartIntercepting)
+    }
+
+    /// 验证事件监听权限请求失败后仍会保留缺失状态。
+    func testQuitGuardPermissionServiceKeepsMissingStateWhenListenAccessRequestFails() {
+        let service = QuitGuardPermissionService(
+            accessibilityChecker: { _ in true },
+            listenEventChecker: { false },
+            listenEventRequester: { false }
+        )
+
+        let availability = service.requestListenEventAccess()
+        XCTAssertEqual(availability.missingPermissions, [.listenEvent])
+        XCTAssertFalse(availability.canStartIntercepting)
+    }
+
+    /// 验证启动编排在权限不足时不会启动 tap。
+    @MainActor
+    func testAppDelegateLaunchMarksMissingPermissionsWithoutStartingTap() {
+        let permissionSpy = PermissionServiceSpy(
+            currentAvailability: QuitGuardAvailability(
+                isAccessibilityTrusted: false,
+                hasListenEventAccess: true
+            )
+        )
+        let runtimeStore = QuitGuardRuntimeStore()
+        let tapSpy = TapControllerSpy()
+        let delegate = makeAppDelegate(
+            permissionService: permissionSpy,
+            runtimeStore: runtimeStore,
+            tapSpy: tapSpy
+        )
+
+        let availability = delegate.readAvailability(promptAccessibility: true)
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: false)
+        XCTAssertEqual(runtimeStore.status, .missingPermissions([.accessibility]))
+        XCTAssertEqual(permissionSpy.promptAccessibilityValues, [true])
+        XCTAssertEqual(tapSpy.startCallCount, 0)
+        XCTAssertEqual(tapSpy.stopCallCount, 1)
+    }
+
+    /// 验证启动编排在 tap 创建失败时会进入失败状态。
+    @MainActor
+    func testAppDelegateLaunchMarksTapCreateFailedWhenTapStartFails() {
+        let permissionSpy = PermissionServiceSpy(
+            currentAvailability: QuitGuardAvailability(
+                isAccessibilityTrusted: true,
+                hasListenEventAccess: true
+            )
+        )
+        let runtimeStore = QuitGuardRuntimeStore()
+        let tapSpy = TapControllerSpy(startResult: false)
+        let delegate = makeAppDelegate(
+            permissionService: permissionSpy,
+            runtimeStore: runtimeStore,
+            tapSpy: tapSpy
+        )
+
+        let availability = delegate.readAvailability(promptAccessibility: true)
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: false)
+        XCTAssertEqual(runtimeStore.status, .tapCreateFailed)
+        XCTAssertEqual(tapSpy.startCallCount, 1)
+    }
+
+    /// 验证启动编排在 tap 创建成功时会进入可用状态。
+    @MainActor
+    func testAppDelegateLaunchMarksReadyWhenTapStarts() {
+        let permissionSpy = PermissionServiceSpy(
+            currentAvailability: QuitGuardAvailability(
+                isAccessibilityTrusted: true,
+                hasListenEventAccess: true
+            )
+        )
+        let runtimeStore = QuitGuardRuntimeStore()
+        let tapSpy = TapControllerSpy(startResult: true)
+        let delegate = makeAppDelegate(
+            permissionService: permissionSpy,
+            runtimeStore: runtimeStore,
+            tapSpy: tapSpy
+        )
+
+        let availability = delegate.readAvailability(promptAccessibility: true)
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: false)
+        XCTAssertEqual(runtimeStore.status, .ready)
+        XCTAssertEqual(tapSpy.startCallCount, 1)
+    }
+
+    /// 验证唤醒编排在权限丢失时会停止拦截。
+    @MainActor
+    func testAppDelegateWakeMarksMissingPermissionsAndStopsTap() {
+        let permissionSpy = PermissionServiceSpy(
+            currentAvailability: QuitGuardAvailability(
+                isAccessibilityTrusted: true,
+                hasListenEventAccess: false
+            )
+        )
+        let runtimeStore = QuitGuardRuntimeStore(status: .ready)
+        let tapSpy = TapControllerSpy()
+        let delegate = makeAppDelegate(
+            permissionService: permissionSpy,
+            runtimeStore: runtimeStore,
+            tapSpy: tapSpy
+        )
+
+        let availability = delegate.readAvailability(promptAccessibility: false)
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: true)
+        XCTAssertEqual(runtimeStore.status, .missingPermissions([.listenEvent]))
+        XCTAssertEqual(permissionSpy.promptAccessibilityValues, [false])
+        XCTAssertEqual(tapSpy.stopCallCount, 1)
+    }
+
+    /// 验证唤醒编排在权限满足时会通过 refresh 恢复拦截。
+    @MainActor
+    func testAppDelegateWakeMarksReadyWhenTapRefreshes() {
+        let permissionSpy = PermissionServiceSpy(
+            currentAvailability: QuitGuardAvailability(
+                isAccessibilityTrusted: true,
+                hasListenEventAccess: true
+            )
+        )
+        let runtimeStore = QuitGuardRuntimeStore(status: .tapDisabled)
+        let tapSpy = TapControllerSpy(refreshResult: true)
+        let delegate = makeAppDelegate(
+            permissionService: permissionSpy,
+            runtimeStore: runtimeStore,
+            tapSpy: tapSpy
+        )
+
+        let availability = delegate.readAvailability(promptAccessibility: false)
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: true)
+        XCTAssertEqual(runtimeStore.status, .ready)
+        XCTAssertEqual(tapSpy.refreshCallCount, 1)
+    }
+
+    /// 验证 tap 创建失败时会立即回传失败状态。
+    func testEventTapControllerStartReportsTapCreateFailure() {
+        var statuses: [QuitGuardRuntimeStatus] = []
+        let controller = EventTapController(
+            config: makeConfig(),
+            handler: makeHandler(isBlockedApp: false),
+            statusHandler: { statuses.append($0) },
+            tapCreator: { _, _, _ in nil }
+        )
+
+        XCTAssertFalse(controller.start())
+        XCTAssertEqual(statuses, [.tapCreateFailed])
+    }
+
+    /// 验证 tap 被系统停用后，恢复成功会回传 ready。
+    func testEventTapControllerReportsReadyAfterTapRecovers() {
+        var statuses: [QuitGuardRuntimeStatus] = []
+        var taps: [CFMachPort?] = [makeTestMachPort(), makeTestMachPort()]
+        let controller = EventTapController(
+            config: makeConfig(),
+            handler: makeHandler(isBlockedApp: false),
+            statusHandler: { statuses.append($0) },
+            tapCreator: { _, _, _ in taps.removeFirst() }
+        )
+
+        XCTAssertTrue(controller.start())
+        controller.handleTapDisabled(.tapDisabledByTimeout)
+        waitForAsyncWork()
+        XCTAssertEqual(statuses, [.tapDisabled, .ready])
+    }
+
+    /// 验证 tap 被系统停用后，恢复失败会回传创建失败状态。
+    func testEventTapControllerReportsFailureWhenTapRecoveryFails() {
+        var statuses: [QuitGuardRuntimeStatus] = []
+        var taps: [CFMachPort?] = [makeTestMachPort(), nil]
+        let controller = EventTapController(
+            config: makeConfig(),
+            handler: makeHandler(isBlockedApp: false),
+            statusHandler: { statuses.append($0) },
+            tapCreator: { _, _, _ in taps.removeFirst() }
+        )
+
+        XCTAssertTrue(controller.start())
+        controller.handleTapDisabled(.tapDisabledByUserInput)
+        waitForAsyncWork()
+        XCTAssertEqual(statuses, [.tapDisabled, .tapCreateFailed])
+    }
+
     func testMenuPanelDraftsOnlyWriteAfterApply() {
         let config = makeConfig(doubleTap: 3, alert: 3)
         let model = MenuPanelModel(
@@ -486,6 +734,27 @@ private extension CQTests {
         )
     }
 
+    /// 构造用于编排测试的 AppDelegate，并注入可观察的 tap 控制器。
+    /// - Parameters:
+    ///   - permissionService: 权限检查桩对象。
+    ///   - runtimeStore: 运行状态存储。
+    ///   - tapSpy: tap 控制器桩对象。
+    /// - Returns: 注入完成的 AppDelegate。
+    @MainActor
+    func makeAppDelegate(
+        permissionService: QuitGuardPermissionChecking,
+        runtimeStore: QuitGuardRuntimeStore,
+        tapSpy: TapControllerSpy
+    ) -> AppDelegate {
+        AppDelegate(
+            config: makeConfig(),
+            state: QuitGuardState(),
+            permissionService: permissionService,
+            runtimeStore: runtimeStore,
+            eventTapControllerFactory: { _, _, _ in tapSpy }
+        )
+    }
+
     func commandQEvent(keyDown: Bool, flags: CGEventFlags) -> CGEvent {
         let source = CGEventSource(stateID: .combinedSessionState)
         let event = CGEvent(
@@ -495,6 +764,14 @@ private extension CQTests {
         )!
         event.flags = flags
         return event
+    }
+
+    /// 构造一个可供测试使用的 MachPort，用来模拟成功创建的 event tap。
+    /// - Returns: 可被 run loop 持有的 MachPort 实例。
+    func makeTestMachPort() -> CFMachPort {
+        var context = CFMachPortContext()
+        let callback: CFMachPortCallBack = { _, _, _, _ in }
+        return CFMachPortCreate(kCFAllocatorDefault, callback, &context, nil)!
     }
 }
 
@@ -511,5 +788,65 @@ private struct SystemAppPickerSpy: SystemAppPicking {
 
     func pickApp() -> URL? {
         selectedURL
+    }
+}
+
+private final class PermissionServiceSpy: QuitGuardPermissionChecking {
+    private let currentValue: QuitGuardAvailability
+    private let requestedValue: QuitGuardAvailability
+    private(set) var promptAccessibilityValues: [Bool] = []
+
+    init(
+        currentAvailability: QuitGuardAvailability,
+        requestedAvailability: QuitGuardAvailability? = nil
+    ) {
+        self.currentValue = currentAvailability
+        self.requestedValue = requestedAvailability ?? currentAvailability
+    }
+
+    /// 返回预设的权限快照，并记录启动方是否请求过辅助功能提示。
+    /// - Parameter promptAccessibility: 是否触发辅助功能提示。
+    /// - Returns: 预设的权限快照。
+    func currentAvailability(promptAccessibility: Bool) -> QuitGuardAvailability {
+        promptAccessibilityValues.append(promptAccessibility)
+        return currentValue
+    }
+
+    /// 返回预设的事件监听权限请求结果。
+    /// - Returns: 请求后的权限快照。
+    func requestListenEventAccess() -> QuitGuardAvailability {
+        requestedValue
+    }
+}
+
+private final class TapControllerSpy: QuitGuardControlling {
+    private let startResult: Bool
+    private let refreshResult: Bool
+    private(set) var startCallCount: Int = 0
+    private(set) var stopCallCount: Int = 0
+    private(set) var refreshCallCount: Int = 0
+
+    init(startResult: Bool = true, refreshResult: Bool = true) {
+        self.startResult = startResult
+        self.refreshResult = refreshResult
+    }
+
+    /// 记录启动调用次数，并返回预设结果。
+    /// - Returns: 预设的启动结果。
+    func start() -> Bool {
+        startCallCount += 1
+        return startResult
+    }
+
+    /// 记录停止调用次数。
+    func stop() {
+        stopCallCount += 1
+    }
+
+    /// 记录恢复调用次数，并返回预设结果。
+    /// - Returns: 预设的恢复结果。
+    func refresh() -> Bool {
+        refreshCallCount += 1
+        return refreshResult
     }
 }
