@@ -93,6 +93,7 @@ enum QuitGuardRuntimeStatus: Equatable {
     case missingPermissions([QuitGuardPermissionKind])
     case tapCreateFailed
     case tapDisabled
+    case blockedByEnvironment(SuspectedFailureReason)
 }
 
 extension QuitGuardAvailability {
@@ -114,6 +115,8 @@ extension QuitGuardRuntimeStatus {
             return "tapCreateFailed"
         case .tapDisabled:
             return "tapDisabled"
+        case .blockedByEnvironment(let reason):
+            return "blockedByEnvironment[\(reason.rawValue)]"
         case .missingPermissions(let permissions):
             let names = permissions.map(\.rawValue).joined(separator: ",")
             return "missingPermissions[\(names)]"
@@ -133,6 +136,8 @@ protocol QuitGuardPermissionChecking {
 }
 
 protocol QuitGuardControlling: AnyObject {
+    var currentTapSnapshot: TapSnapshot { get }
+
     /// 启动全局事件拦截，并返回是否创建成功。
     /// - Returns: 事件拦截是否成功启动。
     func start() -> Bool
@@ -257,5 +262,11 @@ final class QuitGuardRuntimeStore: ObservableObject {
     /// 标记事件 tap 被系统停用。
     func markTapDisabled() {
         status = .tapDisabled
+    }
+
+    /// 标记当前运行态被环境问题阻断。
+    /// - Parameter reason: 当前识别出的环境阻断原因。
+    func markBlockedByEnvironment(_ reason: SuspectedFailureReason) {
+        status = .blockedByEnvironment(reason)
     }
 }

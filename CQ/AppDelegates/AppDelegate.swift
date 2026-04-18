@@ -21,17 +21,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let config: QuitGuardConfig
     private let state: QuitGuardState
     private let permissionService: QuitGuardPermissionChecking
+    private let diagnosticService: QuitGuardDiagnosing
+    private let telemetry: QuitGuardTelemetryWriting
     private let initialRuntimeStore: QuitGuardRuntimeStore?
     private let eventTapControllerFactory: EventTapControllerFactory
     let menuPopoverController = MenuPopoverController()
     private var noAccessWindow: NSWindow?
     private var runtimeStoreStorage: QuitGuardRuntimeStore?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var lastAvailability: QuitGuardAvailability?
 
     override init() {
         self.config = .shared
         self.state = QuitGuardState()
         self.permissionService = QuitGuardPermissionService()
+        self.diagnosticService = QuitGuardDiagnosticService()
+        self.telemetry = QuitGuardTelemetry()
         self.initialRuntimeStore = nil
         self.eventTapControllerFactory = AppDelegate.defaultEventTapControllerFactory
         super.init()
@@ -41,12 +46,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config: QuitGuardConfig,
         state: QuitGuardState,
         permissionService: QuitGuardPermissionChecking,
+        diagnosticService: QuitGuardDiagnosing,
+        telemetry: QuitGuardTelemetryWriting,
         runtimeStore: QuitGuardRuntimeStore?,
         eventTapControllerFactory: @escaping EventTapControllerFactory
     ) {
         self.config = config
         self.state = state
         self.permissionService = permissionService
+        self.diagnosticService = diagnosticService
+        self.telemetry = telemetry
         self.initialRuntimeStore = runtimeStore
         self.eventTapControllerFactory = eventTapControllerFactory
         super.init()
@@ -122,6 +131,7 @@ extension AppDelegate {
     func configureQuitGuardAtLaunch() {
         let availability = readAvailability(promptAccessibility: true)
         AppLog.info("应用启动时同步退出保护: \(availability.logDescription)")
+        recordDiagnostic(event: .permissionRefresh, availability: availability)
         syncQuitGuardStatus(with: availability, refreshTap: false)
         syncAuthorizationWindow(with: availability, showWhenMissing: true)
     }
@@ -131,6 +141,7 @@ extension AppDelegate {
     func configureQuitGuardAfterWake() {
         let availability = readAvailability(promptAccessibility: false)
         AppLog.info("系统唤醒后同步退出保护: \(availability.logDescription)")
+        recordDiagnostic(event: .permissionRefresh, availability: availability)
         syncQuitGuardStatus(with: availability, refreshTap: true)
         syncAuthorizationWindow(with: availability, showWhenMissing: false)
     }
@@ -139,7 +150,9 @@ extension AppDelegate {
     /// - Parameter promptAccessibility: 是否触发辅助功能权限提示。
     /// - Returns: 最新权限快照。
     func readAvailability(promptAccessibility: Bool) -> QuitGuardAvailability {
-        permissionService.currentAvailability(promptAccessibility: promptAccessibility)
+        let availability = permissionService.currentAvailability(promptAccessibility: promptAccessibility)
+        lastAvailability = availability
+        return availability
     }
 
     /// 根据权限快照启动或重建退出保护运行状态。
@@ -148,18 +161,44 @@ extension AppDelegate {
     ///   - refreshTap: 是否按唤醒后的重建流程恢复 tap。
     @MainActor
     func syncQuitGuardStatus(with availability: QuitGuardAvailability, refreshTap: Bool) {
+        let event: QuitGuardTelemetryEvent = refreshTap ? .wakeSync : .launchSync
+        let diagnosticSnapshot = makeDiagnosticSnapshot(availability: availability)
+        telemetry.record(event: .environmentDiagnosed, snapshot: diagnosticSnapshot)
+
+        guard diagnosticSnapshot.canActivateTap else {
+            AppLog.info("退出保护当前不可启动: \(diagnosticSnapshot.suspectedFailureReason.rawValue)")
+            eventTapController.stop()
+            applyBlockedRuntimeStatus(
+                availability: availability,
+                snapshot: diagnosticSnapshot
+            )
+            telemetry.record(event: event, snapshot: diagnosticSnapshot)
+            return
+        }
+
         guard availability.canStartIntercepting else {
             AppLog.info("退出保护缺少权限，停止 event tap: \(availability.logDescription)")
             eventTapController.stop()
             runtimeStore.markMissingPermissions(availability.missingPermissions)
+            telemetry.record(event: event, snapshot: diagnosticSnapshot)
             return
         }
 
         let didActivate = refreshTap ? eventTapController.refresh() : eventTapController.start()
+        let resultSnapshot = makeDiagnosticSnapshot(availability: availability)
+        if !resultSnapshot.tapSnapshot.attempts.isEmpty {
+            telemetry.record(event: .tapCreateAttempt, snapshot: resultSnapshot)
+            telemetry.record(event: .tapCreateResult, snapshot: resultSnapshot)
+        }
+        telemetry.record(event: event, snapshot: resultSnapshot)
         AppLog.info(
             "退出保护同步完成: mode=\(refreshTap ? "refresh" : "start"), success=\(didActivate)"
         )
-        didActivate ? runtimeStore.markReady() : runtimeStore.markTapCreateFailed()
+        updateRuntimeStatus(
+            availability: availability,
+            snapshot: resultSnapshot,
+            didActivate: didActivate
+        )
     }
 
     /// 把 event tap 生命周期变化写回运行状态。
@@ -167,7 +206,13 @@ extension AppDelegate {
     @MainActor
     func syncRuntimeStatus(_ status: QuitGuardRuntimeStatus) {
         AppLog.info("退出保护运行状态更新: \(status.logDescription)")
+        let previousStatus = runtimeStore.status
         runtimeStore.update(status: status)
+        guard status == .tapDisabled || previousStatus == .tapDisabled else { return }
+        let availability = currentAvailabilityForDiagnostics()
+        let snapshot = makeDiagnosticSnapshot(availability: availability)
+        let event: QuitGuardTelemetryEvent = status == .tapDisabled ? .tapDisabled : .tapRecoveryResult
+        telemetry.record(event: event, snapshot: snapshot)
     }
 
     /// 按当前权限结果决定是否展示动态授权窗口。
@@ -221,10 +266,13 @@ extension AppDelegate {
     func handleListenEventAccessRequest() {
         AppLog.info("用户点击请求事件监听权限")
         let availability = permissionService.requestListenEventAccess()
+        lastAvailability = availability
         if !availability.canStartIntercepting {
             runtimeStore.markMissingPermissions(availability.missingPermissions)
         }
         AppLog.info("事件监听权限请求后的状态: \(availability.logDescription)")
+        recordDiagnostic(event: .permissionRefresh, availability: availability)
+        telemetry.record(event: .environmentDiagnosed, snapshot: makeDiagnosticSnapshot(availability: availability))
         showAuthorizationWindow(for: availability)
     }
 
@@ -287,5 +335,78 @@ extension AppDelegate {
         AppLog.info("系统已唤醒，重建事件拦截")
         AppBlack.this.refreshCurrentAppPath()
         configureQuitGuardAfterWake()
+    }
+
+    /// 生成当前运行态对应的退出保护诊断快照。
+    /// - Parameter availability: 最近一次读取到的权限快照。
+    /// - Returns: 汇总权限、tap 与环境后的诊断结果。
+    @MainActor
+    private func makeDiagnosticSnapshot(
+        availability: QuitGuardAvailability
+    ) -> QuitGuardDiagnosticSnapshot {
+        diagnosticService.makeSnapshot(
+            availability: availability,
+            tapSnapshot: eventTapController.currentTapSnapshot
+        )
+    }
+
+    /// 在权限或环境变化时统一记录诊断快照。
+    /// - Parameters:
+    ///   - event: 当前需要记录的诊断事件。
+    ///   - availability: 事件发生时对应的权限快照。
+    @MainActor
+    private func recordDiagnostic(
+        event: QuitGuardTelemetryEvent,
+        availability: QuitGuardAvailability
+    ) {
+        telemetry.record(event: event, snapshot: makeDiagnosticSnapshot(availability: availability))
+    }
+
+    /// 根据诊断结果把运行态写回到统一的运行状态存储。
+    /// - Parameters:
+    ///   - availability: 当前权限快照。
+    ///   - snapshot: 当前完整诊断快照。
+    ///   - didActivate: 本次启动或恢复是否成功。
+    @MainActor
+    private func updateRuntimeStatus(
+        availability: QuitGuardAvailability,
+        snapshot: QuitGuardDiagnosticSnapshot,
+        didActivate: Bool
+    ) {
+        if !availability.canStartIntercepting {
+            runtimeStore.markMissingPermissions(availability.missingPermissions)
+            return
+        }
+        if !snapshot.canActivateTap {
+            runtimeStore.markBlockedByEnvironment(snapshot.suspectedFailureReason)
+            return
+        }
+        didActivate ? runtimeStore.markReady() : runtimeStore.markTapCreateFailed()
+    }
+
+    /// 在退出保护被环境因素阻断时统一写回运行态。
+    /// - Parameters:
+    ///   - availability: 当前权限快照。
+    ///   - snapshot: 当前完整诊断快照。
+    @MainActor
+    private func applyBlockedRuntimeStatus(
+        availability: QuitGuardAvailability,
+        snapshot: QuitGuardDiagnosticSnapshot
+    ) {
+        if !availability.canStartIntercepting {
+            runtimeStore.markMissingPermissions(availability.missingPermissions)
+            return
+        }
+        runtimeStore.markBlockedByEnvironment(snapshot.suspectedFailureReason)
+    }
+
+    /// 返回可用于遥测记录的最近权限快照，必要时会即时重新读取一次。
+    /// - Returns: 当前仍可信的权限快照。
+    @MainActor
+    private func currentAvailabilityForDiagnostics() -> QuitGuardAvailability {
+        if let lastAvailability {
+            return lastAvailability
+        }
+        return readAvailability(promptAccessibility: false)
     }
 }

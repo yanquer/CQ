@@ -18,15 +18,24 @@ private final class TipPanel: NSPanel {
 
 final class EventTapController: QuitGuardControlling {
     typealias EventTapCreator = (
+        CGEventTapLocation,
+        CGEventTapPlacement,
+        CGEventTapOptions,
         CGEventTapCallBack,
         UnsafeMutableRawPointer?,
         CGEventMask
     ) -> CFMachPort?
 
+    private struct TapCreationResult {
+        let tap: CFMachPort?
+        let snapshot: TapSnapshot
+    }
+
     private let config: QuitGuardConfig
     private let handler: EventHandler
     private let statusHandler: (QuitGuardRuntimeStatus) -> Void
     private let tapCreator: EventTapCreator
+    private let strategies: [EventTapStrategy]
     private let tipAnimationDuration: TimeInterval = 0.18
 
     private var tap: CFMachPort?
@@ -36,15 +45,19 @@ final class EventTapController: QuitGuardControlling {
     private var tipCloseWorkItem: DispatchWorkItem?
     private var tipDismissWorkItem: DispatchWorkItem?
 
+    private(set) var currentTapSnapshot: TapSnapshot = .idle
+
     init(
         config: QuitGuardConfig,
         handler: EventHandler,
         statusHandler: @escaping (QuitGuardRuntimeStatus) -> Void = { _ in },
+        strategies: [EventTapStrategy] = EventTapStrategy.defaultStrategies,
         tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator
     ) {
         self.config = config
         self.handler = handler
         self.statusHandler = statusHandler
+        self.strategies = strategies
         self.tapCreator = tapCreator
     }
 
@@ -54,7 +67,7 @@ final class EventTapController: QuitGuardControlling {
         if tap != nil {
             AppLog.info("event tap 已存在，直接尝试启用")
             enableTap()
-            return true
+            return currentTapSnapshot.isEnabled
         }
 
         AppLog.info("开始创建 event tap")
@@ -66,6 +79,7 @@ final class EventTapController: QuitGuardControlling {
         handler.resetRuntimeState()
         destroyTipWindow()
         removeTap()
+        markTapStopped()
     }
 
     /// 重建事件拦截，并返回恢复结果。
@@ -81,7 +95,13 @@ final class EventTapController: QuitGuardControlling {
     private func createTap() -> Bool {
         let callback = EventTapController.tapCallback
         let ref = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        tap = tapCreator(callback, ref, makeEventMask())
+        let result = buildTapCreationResult(
+            callback: callback,
+            ref: ref,
+            eventMask: makeEventMask()
+        )
+        tap = result.tap
+        currentTapSnapshot = result.snapshot
 
         guard let tap else {
             AppLog.info("创建 event tap 失败")
@@ -93,6 +113,13 @@ final class EventTapController: QuitGuardControlling {
         guard let runLoopSource else {
             AppLog.info("创建 event tap run loop source 失败")
             removeTap()
+            currentTapSnapshot = makeTapSnapshot(
+                location: currentTapSnapshot.currentLocation,
+                option: currentTapSnapshot.currentOption,
+                isEnabled: false,
+                failureReason: .tapCreateReturnedNil,
+                attempts: currentTapSnapshot.attempts
+            )
             statusHandler(.tapCreateFailed)
             return false
         }
@@ -151,6 +178,7 @@ final class EventTapController: QuitGuardControlling {
     /// - Parameter eventType: 系统返回的停用事件类型。
     func handleTapDisabled(_ eventType: CGEventType) {
         AppLog.info("event tap 已停用: \(eventType.rawValue)")
+        markTapDisabled()
         statusHandler(.tapDisabled)
         // 休眠唤醒后系统可能直接停用 tap，直接重建会比单纯 enable 更稳。
         DispatchQueue.main.async { [weak self] in
@@ -186,24 +214,161 @@ final class EventTapController: QuitGuardControlling {
     private func enableTap() {
         guard let tap else { return }
         CGEvent.tapEnable(tap: tap, enable: true)
+        currentTapSnapshot = makeTapSnapshot(
+            location: currentTapSnapshot.currentLocation,
+            option: currentTapSnapshot.currentOption,
+            isEnabled: true,
+            failureReason: nil,
+            attempts: currentTapSnapshot.attempts
+        )
         AppLog.info("event tap 已启用")
+    }
+
+    /// 按预设策略依次尝试创建 event tap，并沉淀每次尝试结果。
+    /// - Parameters:
+    ///   - callback: event tap 回调。
+    ///   - ref: 回调透传的控制器指针。
+    ///   - eventMask: 需要监听的事件掩码。
+    /// - Returns: 创建后的 tap 与对应快照。
+    private func buildTapCreationResult(
+        callback: @escaping CGEventTapCallBack,
+        ref: UnsafeMutableRawPointer?,
+        eventMask: CGEventMask
+    ) -> TapCreationResult {
+        var attempts: [EventTapAttemptSnapshot] = []
+        for strategy in strategies {
+            let tap = makeTap(strategy: strategy, callback: callback, ref: ref, eventMask: eventMask)
+            attempts.append(makeAttemptSnapshot(strategy: strategy, succeeded: tap != nil))
+            guard let tap else { continue }
+            return TapCreationResult(
+                tap: tap,
+                snapshot: makeTapSnapshot(
+                    location: strategy.locationName,
+                    option: strategy.optionName,
+                    isEnabled: false,
+                    failureReason: nil,
+                    attempts: attempts
+                )
+            )
+        }
+        return TapCreationResult(
+            tap: nil,
+            snapshot: makeTapSnapshot(
+                location: nil,
+                option: nil,
+                isEnabled: false,
+                failureReason: .tapCreateReturnedNil,
+                attempts: attempts
+            )
+        )
+    }
+
+    /// 按给定策略向系统请求创建底层 event tap。
+    /// - Parameters:
+    ///   - strategy: 当前准备尝试的 tap 策略。
+    ///   - callback: event tap 回调。
+    ///   - ref: 回调透传的控制器指针。
+    ///   - eventMask: 需要监听的事件掩码。
+    /// - Returns: 系统返回的 event tap 端口。
+    private func makeTap(
+        strategy: EventTapStrategy,
+        callback: @escaping CGEventTapCallBack,
+        ref: UnsafeMutableRawPointer?,
+        eventMask: CGEventMask
+    ) -> CFMachPort? {
+        tapCreator(
+            strategy.location,
+            strategy.placement,
+            strategy.options,
+            callback,
+            ref,
+            eventMask
+        )
+    }
+
+    /// 把单次策略尝试转换成可落盘的快照记录。
+    /// - Parameters:
+    ///   - strategy: 当前尝试使用的 tap 策略。
+    ///   - succeeded: 当前策略是否创建成功。
+    /// - Returns: 对应策略的尝试结果。
+    private func makeAttemptSnapshot(
+        strategy: EventTapStrategy,
+        succeeded: Bool
+    ) -> EventTapAttemptSnapshot {
+        EventTapAttemptSnapshot(
+            location: strategy.locationName,
+            option: strategy.optionName,
+            succeeded: succeeded
+        )
+    }
+
+    /// 构造当前控制器要暴露给外部的 tap 运行快照。
+    /// - Parameters:
+    ///   - location: 当前命中的 tap 位置。
+    ///   - option: 当前命中的 tap 选项。
+    ///   - isEnabled: tap 是否已经启用。
+    ///   - failureReason: 最近一次 tap 失败原因。
+    ///   - attempts: 最近一次创建流程的所有尝试记录。
+    /// - Returns: 结构化的 tap 快照。
+    private func makeTapSnapshot(
+        location: EventTapLocationName?,
+        option: EventTapOptionName?,
+        isEnabled: Bool,
+        failureReason: TapFailureReason?,
+        attempts: [EventTapAttemptSnapshot]
+    ) -> TapSnapshot {
+        TapSnapshot(
+            currentLocation: location,
+            currentOption: option,
+            isEnabled: isEnabled,
+            lastFailureReason: failureReason,
+            attempts: attempts
+        )
+    }
+
+    /// 在控制器主动停止 tap 时回写关闭后的运行快照。
+    private func markTapStopped() {
+        currentTapSnapshot = makeTapSnapshot(
+            location: currentTapSnapshot.currentLocation,
+            option: currentTapSnapshot.currentOption,
+            isEnabled: false,
+            failureReason: nil,
+            attempts: currentTapSnapshot.attempts
+        )
+    }
+
+    /// 在系统停用 tap 时记录当前失败原因，供诊断模块读取。
+    private func markTapDisabled() {
+        currentTapSnapshot = makeTapSnapshot(
+            location: currentTapSnapshot.currentLocation,
+            option: currentTapSnapshot.currentOption,
+            isEnabled: false,
+            failureReason: .tapDisabledBySystem,
+            attempts: currentTapSnapshot.attempts
+        )
     }
 
     /// 构造默认的系统级 event tap 创建逻辑。
     /// - Parameters:
+    ///   - location: 当前策略希望创建的 tap 位置。
+    ///   - placement: 当前策略希望插入的 tap 位置。
+    ///   - options: 当前策略使用的 tap 选项。
     ///   - callback: event tap 回调。
     ///   - userInfo: 回调透传上下文。
     ///   - eventMask: 需要监听的事件掩码。
     /// - Returns: 系统返回的 event tap 端口。
     private static func defaultTapCreator(
+        location: CGEventTapLocation,
+        placement: CGEventTapPlacement,
+        options: CGEventTapOptions,
         callback: @escaping CGEventTapCallBack,
         userInfo: UnsafeMutableRawPointer?,
         eventMask: CGEventMask
     ) -> CFMachPort? {
         CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
+            tap: location,
+            place: placement,
+            options: options,
             eventsOfInterest: eventMask,
             callback: callback,
             userInfo: userInfo

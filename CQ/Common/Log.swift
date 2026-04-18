@@ -12,16 +12,15 @@ struct AppLog{
     static let logCq = OSLog(subsystem: "com.yq.cq", category: "util")
     
     static func info(_ data: String){
-        os_log(.info, log: logCq, "\(data)")
+        os_log("%{public}@", log: logCq, type: .info, data)
     }
     
     static func debug(_ data: String){
-        os_log(.debug, log: logCq, "\(data)")
+        os_log("%{public}@", log: logCq, type: .debug, data)
     }
     
     static func error(_ data: String){
-        os_log(.error, log: logCq, "\(data)")
+        os_log("%{public}@", log: logCq, type: .error, data)
     }
 }
-
 
