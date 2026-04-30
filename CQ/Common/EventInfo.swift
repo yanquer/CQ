@@ -152,8 +152,8 @@ extension QuitPrompt {
 }
 
 final class QuitGuardState {
-    private let longPressThreshold: TimeInterval = 700
     private var resetWorkItem: DispatchWorkItem?
+    private var hasShownLongPressPrompt = false
 
     private(set) var isAwaitingSecondPress = false
     private(set) var firstCommandQTime: TimeInterval?
@@ -163,12 +163,22 @@ final class QuitGuardState {
         firstCommandQTime != nil
     }
 
-    func handleCommandQKeyDown(now: TimeInterval, config: QuitGuardConfig) -> QuitDecision {
-        if updateLongPress(now: now) {
-            reset()
-            return .passAndReset(.ignoredLongPress)
+    /// 处理一次 Cmd+Q keyDown，并区分真实二次按下与未松手长按重复事件。
+    /// - Parameters:
+    ///   - now: 当前事件发生时间，单位为毫秒。
+    ///   - config: 当前退出保护配置。
+    ///   - isAutorepeat: 当前 keyDown 是否为系统自动重复事件。
+    /// - Returns: 本次 keyDown 对应的退出保护决策。
+    func handleCommandQKeyDown(
+        now: TimeInterval,
+        config: QuitGuardConfig,
+        isAutorepeat: Bool = false
+    ) -> QuitDecision {
+        if firstCommandQTime != nil || isAutorepeat {
+            return passLongPress(now: now)
         }
 
+        firstCommandQTime = now
         if !isAwaitingSecondPress {
             beginAwaitingSecondPress(timeout: config.doubleTapInterval)
             return .blockAndPrompt(.confirmExit(window: config.doubleTapInterval))
@@ -181,6 +191,7 @@ final class QuitGuardState {
     func markKeyUp() {
         firstCommandQTime = nil
         isLongPress = false
+        hasShownLongPressPrompt = false
     }
 
     func reset() {
@@ -188,20 +199,24 @@ final class QuitGuardState {
         isAwaitingSecondPress = false
         firstCommandQTime = nil
         isLongPress = false
+        hasShownLongPressPrompt = false
     }
 
-    private func updateLongPress(now: TimeInterval) -> Bool {
-        guard let firstCommandQTime else {
-            self.firstCommandQTime = now
-            return false
+    /// 透传长按 Cmd+Q 的重复 keyDown，并取消本轮 CQ 二次确认窗口。
+    /// - Parameter now: 当前事件发生时间，单位为毫秒。
+    /// - Returns: 首次长按返回提示并透传事件，后续同一轮长按只透传不重复提示。
+    private func passLongPress(now: TimeInterval) -> QuitDecision {
+        if firstCommandQTime == nil {
+            firstCommandQTime = now
         }
-
-        if isLongPress {
-            return true
+        cancelPendingReset()
+        isAwaitingSecondPress = false
+        isLongPress = true
+        guard !hasShownLongPressPrompt else {
+            return .pass
         }
-
-        isLongPress = now - firstCommandQTime < longPressThreshold
-        return isLongPress
+        hasShownLongPressPrompt = true
+        return .passAndReset(.ignoredLongPress)
     }
 
     private func beginAwaitingSecondPress(timeout: TimeInterval) {

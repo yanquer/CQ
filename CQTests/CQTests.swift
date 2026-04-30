@@ -86,6 +86,40 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(nextPress, .blockAndPrompt(.confirmExit(window: 3)))
     }
 
+    func testAutorepeatLongPressPassesUntilKeyUp() {
+        let config = makeConfig()
+        let state = QuitGuardState()
+
+        _ = state.handleCommandQKeyDown(now: 1_000, config: config)
+        let firstAutorepeat = state.handleCommandQKeyDown(
+            now: 2_000,
+            config: config,
+            isAutorepeat: true
+        )
+        let nextAutorepeat = state.handleCommandQKeyDown(
+            now: 2_100,
+            config: config,
+            isAutorepeat: true
+        )
+
+        XCTAssertEqual(firstAutorepeat, .passAndReset(.ignoredLongPress))
+        XCTAssertEqual(nextAutorepeat, .pass)
+        XCTAssertFalse(state.isAwaitingSecondPress)
+        XCTAssertTrue(state.isLongPress)
+    }
+
+    func testLongPressRestartsConfirmationAfterKeyUp() {
+        let config = makeConfig()
+        let state = QuitGuardState()
+
+        _ = state.handleCommandQKeyDown(now: 1_000, config: config)
+        _ = state.handleCommandQKeyDown(now: 2_000, config: config, isAutorepeat: true)
+        state.markKeyUp()
+        let nextPress = state.handleCommandQKeyDown(now: 3_000, config: config)
+
+        XCTAssertEqual(nextPress, .blockAndPrompt(.confirmExit(window: 3)))
+    }
+
     func testBlacklistedAppAlwaysPasses() {
         let handler = makeHandler(isBlockedApp: true)
         let decision = handler.decision(
@@ -96,6 +130,26 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(decision, .pass)
     }
 
+    func testLongPressRepeatPassesButInitialPressStillIntercepts() {
+        let handler = makeHandler(isBlockedApp: false)
+
+        let firstDecision = handler.decision(
+            for: commandQEvent(keyDown: true, flags: [.maskCommand]),
+            eventType: .keyDown
+        )
+        let repeatDecision = handler.decision(
+            for: commandQEvent(
+                keyDown: true,
+                flags: [.maskCommand],
+                isAutorepeat: true
+            ),
+            eventType: .keyDown
+        )
+
+        XCTAssertEqual(firstDecision, .blockAndPrompt(.confirmExit(window: 3)))
+        XCTAssertEqual(repeatDecision, .passAndReset(.ignoredLongPress))
+    }
+
     func testCommandShiftQWillNotBeIntercepted() {
         let handler = makeHandler(isBlockedApp: false)
         let decision = handler.decision(
@@ -104,6 +158,20 @@ final class CQTests: XCTestCase {
         )
 
         XCTAssertEqual(decision, .pass)
+    }
+
+    func testCommandQEventClassifierReadsAutorepeatFlag() {
+        let classifier = CommandQEventClassifier()
+        let event = commandQEvent(
+            keyDown: true,
+            flags: [.maskCommand],
+            isAutorepeat: true
+        )
+
+        XCTAssertEqual(
+            classifier.classify(event: event, eventType: .keyDown),
+            .keyDown(isAutorepeat: true)
+        )
     }
 
     func testWakeResetClearsRuntimeState() {
@@ -974,7 +1042,17 @@ private extension CQTests {
         )
     }
 
-    func commandQEvent(keyDown: Bool, flags: CGEventFlags) -> CGEvent {
+    /// 构造 Cmd+Q 测试事件，并可按需标记为系统自动重复事件。
+    /// - Parameters:
+    ///   - keyDown: 是否为 keyDown 事件。
+    ///   - flags: 事件携带的修饰键。
+    ///   - isAutorepeat: 是否写入 autorepeat 标记。
+    /// - Returns: 可交给事件处理器或分类器的 CGEvent。
+    func commandQEvent(
+        keyDown: Bool,
+        flags: CGEventFlags,
+        isAutorepeat: Bool = false
+    ) -> CGEvent {
         let source = CGEventSource(stateID: .combinedSessionState)
         let event = CGEvent(
             keyboardEventSource: source,
@@ -982,6 +1060,10 @@ private extension CQTests {
             keyDown: keyDown
         )!
         event.flags = flags
+        event.setIntegerValueField(
+            .keyboardEventAutorepeat,
+            value: isAutorepeat ? 1 : 0
+        )
         return event
     }
 
