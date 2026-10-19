@@ -181,6 +181,7 @@ final class QuitGuardState {
     private var resetWorkItem: DispatchWorkItem?
     private var confirmationDeadline: TimeInterval?
     private var hasShownLongPressPrompt = false
+    private var isPassingCurrentPress = false
 
     private(set) var isAwaitingSecondPress = false
     private(set) var firstCommandQTime: TimeInterval?
@@ -201,6 +202,7 @@ final class QuitGuardState {
         config: QuitGuardConfig,
         isAutorepeat: Bool = false
     ) -> QuitDecision {
+        if isPassingCurrentPress { return .pass }
         if let confirmationDeadline, now >= confirmationDeadline {
             clearConfirmation()
         }
@@ -214,11 +216,13 @@ final class QuitGuardState {
             return .blockAndPrompt(.confirmExit(window: config.doubleTapInterval))
         }
 
-        reset()
+        clearConfirmation()
+        isPassingCurrentPress = true
         return .passAndReset(nil)
     }
 
     func markKeyUp() {
+        isPassingCurrentPress = false
         firstCommandQTime = nil
         isLongPress = false
         hasShownLongPressPrompt = false
@@ -226,6 +230,7 @@ final class QuitGuardState {
 
     /// 清除确认期限及物理按压状态，用于切换应用、停止或确认退出。
     func reset() {
+        isPassingCurrentPress = false
         clearConfirmation()
         firstCommandQTime = nil
         isLongPress = false

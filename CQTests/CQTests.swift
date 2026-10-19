@@ -216,6 +216,20 @@ final class CQTests: XCTestCase {
         state.reset()
     }
 
+    /// 验证确认退出的第二次按压在松开前持续透传，不会把同一次按压误当成下一轮首次确认。
+    func testConfirmedPressRepeatsPassUntilRelease() {
+        let state = QuitGuardState()
+        let config = makeConfig()
+        _ = state.handleCommandQKeyDown(now: 0, config: config)
+        state.markKeyUp()
+        XCTAssertEqual(state.handleCommandQKeyDown(now: 1000, config: config), .passAndReset(nil))
+        XCTAssertEqual(state.handleCommandQKeyDown(now: 1100, config: config), .pass)
+        XCTAssertEqual(state.handleCommandQKeyDown(now: 1200, config: config, isAutorepeat: true), .pass)
+        state.markKeyUp()
+        XCTAssertEqual(state.handleCommandQKeyDown(now: 1300, config: config), .blockAndPrompt(.confirmExit(window: 3)))
+        state.reset()
+    }
+
     func testLongPressDoesNotBecomeSecondConfirmation() {
         let config = makeConfig()
         let state = QuitGuardState()
