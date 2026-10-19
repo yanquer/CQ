@@ -315,27 +315,26 @@ extension AppDelegate {
         )
     }
 
+    /// 使用主线程隔离的可发送回调接收系统通知，避免跨并发边界捕获 AppDelegate。
     @MainActor
     private func registerWorkspaceNotifications() {
         let center = NSWorkspace.shared.notificationCenter
+        let onSleep: @MainActor @Sendable () -> Void = { [weak self] in self?.handleWillSleep() }
+        let onWake: @MainActor @Sendable () -> Void = { [weak self] in self?.handleDidWake() }
         let willSleep = center.addObserver(
             forName: NSWorkspace.willSleepNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleWillSleep()
-            }
+        ) { _ in
+            Task { @MainActor in onSleep() }
         }
 
         let didWake = center.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleDidWake()
-            }
+        ) { _ in
+            Task { @MainActor in onWake() }
         }
 
         workspaceObservers = [willSleep, didWake]
