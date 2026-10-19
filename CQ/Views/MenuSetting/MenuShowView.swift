@@ -9,6 +9,7 @@ import AppKit
 import Combine
 import Foundation
 import SwiftUI
+import ServiceManagement
 
 struct MenuShowView: View {
     @StateObject private var model: MenuPanelModel
@@ -169,7 +170,8 @@ final class MenuPanelModel: ObservableObject {
         }
     }
     @Published private(set) var runtimeStatus: QuitGuardRuntimeStatus
-    @Published var startAtLogin: Bool
+    @Published private(set) var loginStatus: SMAppService.Status
+    @Published private(set) var autoLaunchError: String?
     @Published var doubleTapIntervalDraft: Double
     @Published var alertCloseTimeDraft: Double
     @Published var whitelistSearchText: String = "" {
@@ -196,7 +198,8 @@ final class MenuPanelModel: ObservableObject {
     private let appCatalog: InstalledAppCataloging
     private let systemAppPicker: SystemAppPicking
     private let appCatalogQueue: DispatchQueue
-    private let setAutoLaunch: (Bool) -> Void
+    private let autoLaunchStatus: () -> SMAppService.Status
+    private let setAutoLaunch: (Bool) throws -> Void
     private let quitAction: () -> Void
     private let recheckProtectionAction: () -> Void
     private var cancellables: Set<AnyCancellable> = []
@@ -211,10 +214,8 @@ final class MenuPanelModel: ObservableObject {
             label: "com.yq.cq.app-catalog",
             qos: .userInitiated
         ),
-        isAutoLaunchEnabled: @escaping () -> Bool = { AutoLaunch.isEnabledAutoLaunch },
-        setAutoLaunch: @escaping (Bool) -> Void = {
-            $0 ? AutoLaunch.enableAutoLaunch() : AutoLaunch.disableAutoLaunch()
-        },
+        autoLaunchStatus: @escaping () -> SMAppService.Status = { AutoLaunch.status },
+        setAutoLaunch: @escaping (Bool) throws -> Void = AutoLaunch.setEnabled,
         quitAction: @escaping () -> Void = { NSApplication.shared.terminate(nil) },
         runtimeStatus: QuitGuardRuntimeStatus = .tapDisabled,
         runtimeUpdates: AnyPublisher<QuitGuardRuntimeStatus, Never>? = nil,
@@ -225,11 +226,12 @@ final class MenuPanelModel: ObservableObject {
         self.appCatalog = appCatalog
         self.systemAppPicker = systemAppPicker
         self.appCatalogQueue = appCatalogQueue
+        self.autoLaunchStatus = autoLaunchStatus
         self.setAutoLaunch = setAutoLaunch
         self.quitAction = quitAction
         self.runtimeStatus = runtimeStatus
         self.recheckProtectionAction = recheckProtectionAction
-        self.startAtLogin = isAutoLaunchEnabled()
+        self.loginStatus = autoLaunchStatus()
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
         self.whitelistItems = blackList.records
@@ -241,6 +243,23 @@ final class MenuPanelModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] status in self?.runtimeStatus = status }
             .store(in: &cancellables)
+    }
+
+    /// 开关表示已注册的启动请求；待批准时用独立提示明确尚未生效，并允许取消。
+    var startAtLogin: Bool {
+        loginStatus == .enabled || loginStatus == .requiresApproval
+    }
+
+    var autoLaunchMessage: String? {
+        if let autoLaunchError { return autoLaunchError }
+        switch loginStatus {
+        case .requiresApproval:
+            return "尚未生效，请在系统登录项设置中允许 CQ。"
+        case .notFound:
+            return "找不到应用，请将 CQ 移到“应用程序”后重试。"
+        default:
+            return nil
+        }
     }
 
     var hasPendingChanges: Bool {
@@ -280,12 +299,26 @@ final class MenuPanelModel: ObservableObject {
 
     /// 重新读取权限并尝试恢复退出保护。
     func recheckProtection() {
+        refreshAutoLaunchStatus()
         recheckProtectionAction()
     }
 
+    /// 写入登录启动请求后重新读取系统状态，失败时保留真实开关状态并提示重试。
     func toggleLaunchAtLogin(_ isEnabled: Bool) {
-        startAtLogin = isEnabled
-        setAutoLaunch(isEnabled)
+        autoLaunchError = nil
+        do {
+            try setAutoLaunch(isEnabled)
+        } catch {
+            autoLaunchError = isEnabled ? "未能开启登录启动，请重试。" : "未能关闭登录启动，请重试。"
+            AppLog.error("Login item update failed: requested=\(isEnabled), error=\(error)")
+        }
+        loginStatus = autoLaunchStatus()
+    }
+
+    /// 从系统设置返回时刷新登录启动状态及待批准提示。
+    func refreshAutoLaunchStatus() {
+        loginStatus = autoLaunchStatus()
+        autoLaunchError = nil
     }
 
     func applySettings() {

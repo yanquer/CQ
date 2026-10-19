@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import ServiceManagement
 
 struct GeneralSettingsSection: View {
     @ObservedObject var model: MenuPanelModel
@@ -17,14 +18,26 @@ struct GeneralSettingsSection: View {
                 title: "启动行为",
                 subtitle: "保持常驻，但不打扰你的工作流。"
             ) {
-                MenuSettingToggleRow(
-                    title: "登录时启动",
-                    subtitle: "打开电脑后自动进入菜单栏，减少手动启动。",
-                    isOn: Binding(
-                        get: { model.startAtLogin },
-                        set: model.toggleLaunchAtLogin
+                VStack(alignment: .leading, spacing: 8) {
+                    MenuSettingToggleRow(
+                        title: "登录时启动",
+                        subtitle: "打开电脑后自动进入菜单栏，减少手动启动。",
+                        isOn: Binding(
+                            get: { model.startAtLogin },
+                            set: model.toggleLaunchAtLogin
+                        )
                     )
-                )
+                    if let message = model.autoLaunchMessage {
+                        Text(message)
+                            .font(MenuPanelStyle.helperFont)
+                            .foregroundStyle(MenuPanelStyle.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if model.loginStatus == .requiresApproval {
+                        Button("打开登录项设置", action: SMAppService.openSystemSettingsLoginItems)
+                            .buttonStyle(.bordered)
+                    }
+                }
             }
 
             MenuPanelCard(
@@ -46,6 +59,10 @@ struct GeneralSettingsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear(perform: model.refreshAutoLaunchStatus)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshAutoLaunchStatus()
+        }
     }
 }
 
@@ -66,7 +83,7 @@ struct MenuSettingToggleRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Toggle("", isOn: $isOn)
+            Toggle(title, isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .tint(MenuPanelStyle.accent)

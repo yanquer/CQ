@@ -8,6 +8,7 @@
 import XCTest
 import AppKit
 import Combine
+import ServiceManagement
 @testable import CQ
 
 final class CQTests: XCTestCase {
@@ -709,7 +710,7 @@ final class CQTests: XCTestCase {
         var recheckCount = 0
         let model = MenuPanelModel(
             config: makeConfig(), blackList: makeBlackList(),
-            isAutoLaunchEnabled: { false }, setAutoLaunch: { _ in },
+            autoLaunchStatus: { .notRegistered }, setAutoLaunch: { _ in },
             runtimeStatus: .ready, runtimeUpdates: updates.eraseToAnyPublisher(),
             recheckProtectionAction: { recheckCount += 1 }
         )
@@ -756,12 +757,44 @@ final class CQTests: XCTestCase {
         XCTAssertFalse(makeDiagnosticSnapshot(suspectedFailureReason: .invalidCodeSignature).canActivateTap)
     }
 
+    /// 验证注册或取消失败后开关保持系统实际状态，且显示错误信息。
+    func testLoginItemFailureKeepsSystemState() {
+        for status: SMAppService.Status in [.notRegistered, .enabled] {
+            let model = MenuPanelModel(
+                config: makeConfig(), blackList: makeBlackList(), autoLaunchStatus: { status },
+                setAutoLaunch: { _ in throw NSError(domain: "CQTests.Login", code: 1) }
+            )
+            model.toggleLaunchAtLogin(status != .enabled)
+            XCTAssertEqual(model.startAtLogin, status == .enabled)
+            XCTAssertNotNil(model.autoLaunchError)
+        }
+    }
+
+    /// 验证需要系统批准时显示待批准提示，并允许取消尚未生效的注册。
+    func testLoginItemApprovalCanBeCancelledAndRefreshed() {
+        var status = SMAppService.Status.notRegistered
+        let model = MenuPanelModel(
+            config: makeConfig(), blackList: makeBlackList(), autoLaunchStatus: { status },
+            setAutoLaunch: { status = $0 ? .requiresApproval : .notRegistered }
+        )
+        model.toggleLaunchAtLogin(true)
+        XCTAssertEqual(model.loginStatus, .requiresApproval)
+        XCTAssertTrue(model.autoLaunchMessage?.contains("尚未生效") == true)
+        model.toggleLaunchAtLogin(false)
+        XCTAssertFalse(model.startAtLogin)
+        XCTAssertNil(model.autoLaunchMessage)
+        status = .enabled
+        model.refreshAutoLaunchStatus()
+        XCTAssertTrue(model.startAtLogin)
+        XCTAssertNil(model.autoLaunchMessage)
+    }
+
     func testMenuPanelDraftsOnlyWriteAfterApply() {
         let config = makeConfig(doubleTap: 3, alert: 3)
         let model = MenuPanelModel(
             config: config,
             blackList: makeBlackList(),
-            isAutoLaunchEnabled: { false },
+            autoLaunchStatus: { .notRegistered },
             setAutoLaunch: { _ in },
             quitAction: {}
         )
@@ -783,7 +816,7 @@ final class CQTests: XCTestCase {
         let model = MenuPanelModel(
             config: config,
             blackList: makeBlackList(),
-            isAutoLaunchEnabled: { false },
+            autoLaunchStatus: { .notRegistered },
             setAutoLaunch: { _ in },
             quitAction: {}
         )
@@ -1043,7 +1076,7 @@ private extension CQTests {
             appCatalog: appCatalog,
             systemAppPicker: systemAppPicker,
             appCatalogQueue: DispatchQueue(label: "CQTests.appCatalogQueue"),
-            isAutoLaunchEnabled: { false },
+            autoLaunchStatus: { .notRegistered },
             setAutoLaunch: { _ in },
             quitAction: {}
         )
