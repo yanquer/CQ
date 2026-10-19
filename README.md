@@ -46,6 +46,8 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 
 如果诊断文件里已经提示权限满足，但 `suspectedFailureReason` 仍然是 `invalidCodeSignature`、`tapCreateReturnedNil`、`tapEnableFailed` 或 `declaredSandboxButUnavailable`，请先重启应用，再重新验证一次。
 
+本地白名单与诊断 JSON 的读取上限为 1 MiB。超限文件会被拒绝处理，白名单原文件不会被覆盖；可在备份后检查文件内容并重试。
+
 ## 开发说明
 
 - 本地跑单测时建议关闭签名校验，避免被已撤销证书影响：

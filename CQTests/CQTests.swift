@@ -1438,6 +1438,22 @@ final class CQTests: XCTestCase {
         XCTAssertTrue(model.hasPendingChanges)
     }
 
+    /// 验证异常巨大的本地 JSON 被有界拒绝，不能覆盖已保存的有效记录。
+    func testFileStoreRejectsOversizedJSONWithoutOverwritingData() throws {
+        let file = makeTempFileURL()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let store = AppFileStore(fileURL: file)
+        XCTAssertTrue(store.save(["/Applications/A.app"]))
+        let originalSize = try Data(contentsOf: file).count
+        let oversized = [String(repeating: "x", count: 1_048_577)]
+        XCTAssertFalse(store.save(oversized))
+        XCTAssertEqual(try Data(contentsOf: file).count, originalSize)
+        try JSONEncoder().encode(oversized).write(to: file)
+        if case .success = store.loadResult([String].self) { XCTFail("Oversized JSON must be rejected before decoding") }
+        XCTAssertTrue(store.saveData(Data(repeating: 32, count: AppFileStore.maximumFileSize)))
+        XCTAssertEqual(try store.loadDataResult().get()?.count, AppFileStore.maximumFileSize)
+    }
+
     /// 验证损坏文件不会被当成空列表覆盖，修复文件后重试保留已有记录。
     func testCorruptWhitelistIsPreservedAndCanRecover() throws {
         let file = makeTempFileURL()

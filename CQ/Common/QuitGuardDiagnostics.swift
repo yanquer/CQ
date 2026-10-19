@@ -199,30 +199,27 @@ protocol QuitGuardDiagnosticPersisting {
 }
 
 final class QuitGuardDiagnosticStore: QuitGuardDiagnosticPersisting {
-    private let fileURL: URL
-    private let fileManager: FileManager
+    private let fileStore: AppFileStore
 
     init(
         fileName: String = "quit-guard-diagnostics.json",
         folderName: String = "CQ",
         fileManager: FileManager = .default
     ) {
-        self.fileManager = fileManager
-        self.fileURL = AppFileStore(
+        self.fileStore = AppFileStore(
             fileName: fileName,
             folderName: folderName,
             fileManager: fileManager
-        ).fileURL
+        )
     }
 
     /// 读取已经存在的退出保护诊断报告。
     /// - Returns: 当前磁盘中的诊断报告。
     func loadReport() -> QuitGuardDiagnosticReport? {
         do {
-            let data = try Data(contentsOf: fileURL)
+            guard let data = try fileStore.loadDataResult().get() else { return nil }
             return try makeDecoder().decode(QuitGuardDiagnosticReport.self, from: data)
         } catch {
-            guard !isMissingFile(error) else { return nil }
             AppLog.error("读取退出保护诊断文件失败: \(error)")
             return nil
         }
@@ -233,22 +230,11 @@ final class QuitGuardDiagnosticStore: QuitGuardDiagnosticPersisting {
     /// - Returns: 是否写入成功。
     func saveReport(_ report: QuitGuardDiagnosticReport) -> Bool {
         do {
-            try createDirectoryIfNeeded()
-            let data = try makeEncoder().encode(report)
-            try data.write(to: fileURL, options: .atomic)
-            return true
+            return fileStore.saveData(try makeEncoder().encode(report))
         } catch {
             AppLog.error("写入退出保护诊断文件失败: \(error)")
             return false
         }
-    }
-
-    /// 确保诊断文件所在目录已经存在。
-    private func createDirectoryIfNeeded() throws {
-        try fileManager.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
     }
 
     /// 构造读取诊断文件所需的解码器。
@@ -268,14 +254,6 @@ final class QuitGuardDiagnosticStore: QuitGuardDiagnosticPersisting {
         return encoder
     }
 
-    /// 判断当前读取失败是否只是因为诊断文件尚未生成。
-    /// - Parameter error: 读取时抛出的错误对象。
-    /// - Returns: 是否属于首次运行的文件缺失。
-    private func isMissingFile(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        return nsError.domain == NSCocoaErrorDomain &&
-            nsError.code == NSFileReadNoSuchFileError
-    }
 }
 
 final class QuitGuardTelemetry: QuitGuardTelemetryWriting {
