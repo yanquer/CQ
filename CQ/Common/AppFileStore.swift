@@ -40,13 +40,17 @@ final class AppFileStore {
         }
     }
 
-    func save<T: Encodable>(_ value: T) {
+    /// 原子保存数据并返回是否成功，让上层在失败时保留原有内存状态。
+    @discardableResult
+    func save<T: Encodable>(_ value: T) -> Bool {
         do {
             try createDirectoryIfNeeded()
             let data = try JSONEncoder().encode(value)
             try data.write(to: fileURL, options: .atomic)
+            return true
         } catch {
             AppLog.error("写入文件失败: \(error)")
+            return false
         }
     }
 

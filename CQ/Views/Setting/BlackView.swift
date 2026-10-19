@@ -21,6 +21,13 @@ struct WhitelistSection: View {
                     MenuWhitelistSearchField(text: $model.whitelistSearchText)
                 }
                 listContent
+                if let error = model.whitelistError {
+                    Text(error)
+                        .font(MenuPanelStyle.helperFont)
+                        .foregroundStyle(MenuPanelStyle.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
                     MenuInlineActionButton(
                         title: "添加应用",
@@ -241,6 +248,13 @@ struct MenuAppPickerSheet: View {
                     placeholder: "搜索应用名或路径"
                 )
                 listContent
+                if let error = model.whitelistError {
+                    Text(error)
+                        .font(MenuPanelStyle.helperFont)
+                        .foregroundStyle(MenuPanelStyle.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
                     MenuInlineActionButton(
                         title: "从 Finder 选择",

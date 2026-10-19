@@ -990,6 +990,64 @@ final class CQTests: XCTestCase {
         XCTAssertTrue(model.hasPendingChanges)
     }
 
+    /// 验证保存失败不会更新白名单列表及索引，恢复磁盘后可重试成功。
+    func testWhitelistWriteFailurePreservesRecordsAndIndex() throws {
+        let directory = makeTempDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("whitelist.json")
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.append(data: "/Applications/A.app"))
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        XCTAssertFalse(list.append(data: "/Applications/B.app"))
+        XCTAssertFalse(list.remove(data: "/Applications/A.app"))
+        XCTAssertEqual(list.records, ["/Applications/A.app"])
+        XCTAssertTrue(list.contains("/Applications/A.app"))
+        XCTAssertFalse(list.contains("/Applications/B.app"))
+        try FileManager.default.removeItem(at: file)
+        XCTAssertTrue(list.append(data: "/Applications/B.app"))
+        XCTAssertEqual(WhitelistStore(fileURL: file).load(), list.records)
+    }
+
+    /// 验证添加失败后选择层继续显示错误并保留选择，恢复存储后可再次确认。
+    func testAppPickerKeepsSelectionWhenWhitelistSaveFails() throws {
+        let file = makeTempDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: file) }
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        let item = makeAppPickerItem("/Applications/A.app")
+        let model = makeMenuPanelModel(records: [], blackList: list, appCatalog: AppCatalogSpy(items: [item]))
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.selectAppPickerItem(item)
+        model.confirmAppPickerSelection()
+        XCTAssertTrue(model.isShowingAppPicker)
+        XCTAssertEqual(model.selectedAppPickerItem, item)
+        XCTAssertNotNil(model.whitelistError)
+        XCTAssertTrue(list.records.isEmpty)
+        try FileManager.default.removeItem(at: file)
+        model.confirmAppPickerSelection()
+        XCTAssertFalse(model.isShowingAppPicker)
+        XCTAssertNil(model.whitelistError)
+        XCTAssertTrue(list.contains(item.path))
+    }
+
+    /// 验证移除保存失败时面板展示错误并保留原有白名单及所选项。
+    func testWhitelistRemovalFailureIsVisibleInMenu() throws {
+        let file = makeTempFileURL()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.append(data: "/Applications/A.app"))
+        let model = makeMenuPanelModel(records: [], blackList: list)
+        model.selectWhitelistItem("/Applications/A.app")
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        model.removeSelectedWhitelistItem()
+        XCTAssertNotNil(model.whitelistError)
+        XCTAssertEqual(model.whitelistItems, ["/Applications/A.app"])
+        XCTAssertEqual(model.selectedWhitelistItem, "/Applications/A.app")
+    }
+
     func testWhitelistStoreReturnsEmptyWhenFileMissing() {
         let store = WhitelistStore(fileURL: makeTempFileURL())
         XCTAssertEqual(store.load(), [])

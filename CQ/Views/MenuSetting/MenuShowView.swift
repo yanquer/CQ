@@ -188,6 +188,7 @@ final class MenuPanelModel: ObservableObject {
     }
     @Published var selectedWhitelistItem: String?
     @Published var selectedAppPickerItem: AppPickerItem?
+    @Published private(set) var whitelistError: String?
     @Published private(set) var whitelistItems: [String]
     @Published private(set) var filteredWhitelistItems: [String]
     @Published private(set) var appPickerItems: [AppPickerItem]
@@ -334,16 +335,21 @@ final class MenuPanelModel: ObservableObject {
         presentAppPicker()
     }
 
+    /// 移除所选应用并反馈保存结果，失败时保留原列表与选择以便重试。
     func removeSelectedWhitelistItem() {
-        blackList.remove(data: selectedWhitelistItem)
+        guard let selectedWhitelistItem else { return }
+        let saved = blackList.remove(data: selectedWhitelistItem)
+        whitelistError = saved ? nil : "未能保存白名单，原列表保持不变。请稍后重试。"
     }
 
     func selectAppPickerItem(_ item: AppPickerItem?) {
         selectedAppPickerItem = item
     }
 
+    /// 保存成功后关闭选择层，失败时保留选择并展示可重试的错误。
     func confirmAppPickerSelection() {
-        appendWhitelist(selectedAppPickerItem?.path)
+        guard canConfirmAppPickerSelection else { return }
+        guard appendWhitelist(selectedAppPickerItem?.path) else { return }
         dismissAppPicker()
     }
 
@@ -404,8 +410,13 @@ private extension MenuPanelModel {
         appendWhitelist(url.path)
     }
 
-    func appendWhitelist(_ path: String?) {
-        blackList.append(data: path)
+    /// 保存选中的应用并返回结果，供选择层和 Finder 入口统一处理错误。
+    @discardableResult
+    func appendWhitelist(_ path: String?) -> Bool {
+        guard let path else { return false }
+        let saved = blackList.append(data: path)
+        whitelistError = saved ? nil : "未能保存白名单，原列表保持不变。请稍后重试。"
+        return saved
     }
 
     func refreshFilteredWhitelistItems() {
@@ -421,6 +432,7 @@ private extension MenuPanelModel {
 
     /// 每次打开选择层时在后台刷新目录，避免新安装或卸载的应用被旧缓存掩盖。
     func presentAppPicker() {
+        whitelistError = nil
         isShowingAppPicker = true
         selectedAppPickerItem = nil
         appPickerSearchText = ""
