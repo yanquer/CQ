@@ -114,7 +114,7 @@ struct QuitGuardDiagnosticSnapshot: Codable, Equatable {
     /// 返回当前诊断结果是否允许继续启动全局拦截。
     var canActivateTap: Bool {
         switch suspectedFailureReason {
-        case .none, .tapCreateReturnedNil, .tapEnableFailed, .tapDisabledBySystem:
+        case .none, .tapCreateReturnedNil, .tapEnableFailed, .tapDisabledBySystem, .declaredSandboxButUnavailable:
             return true
         default:
             return false

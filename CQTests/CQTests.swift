@@ -1106,6 +1106,25 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(runtimeStore.status, .ready)
     }
 
+    /// 验证保留沙箱时，历史创建失败不会让第一次手动重试只清状态而不尝试创建。
+    @MainActor
+    func testSandboxHistoricalTapFailureStillAllowsRetry() {
+        let availability = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let tap = TapControllerSpy(currentTapSnapshot: TapSnapshot(
+            currentLocation: nil, currentOption: nil, isEnabled: false,
+            lastFailureReason: .tapCreateReturnedNil, attempts: []
+        ))
+        let delegate = makeAppDelegate(
+            permissionService: PermissionServiceSpy(currentAvailability: availability),
+            runtimeStore: QuitGuardRuntimeStore(status: .tapCreateFailed), tapSpy: tap,
+            diagnosticService: QuitGuardDiagnosticService(
+                codeSignatureReader: { _ in .valid }, sandboxStateReader: { _ in .enabled }
+            )
+        )
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: true)
+        XCTAssertEqual(tap.refreshCallCount, 1)
+    }
+
     /// 验证可重试的 tap 故障不会被误当成不可恢复的环境限制。
     func testDiagnosticAllowsRetryForTransientTapFailures() {
         for reason: SuspectedFailureReason in [.tapCreateReturnedNil, .tapDisabledBySystem] {
