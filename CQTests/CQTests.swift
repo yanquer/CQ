@@ -1630,6 +1630,27 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(BlackList(store: WhitelistStore(fileURL: fileURL)).records, [])
     }
 
+    /// 验证应用符号链接和真实路径具有同一白名单身份，增删及重载保持一致。
+    func testWhitelistMatchesApplicationSymlinksAndCanonicalPaths() throws {
+        let directory = makeTempDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = directory.appendingPathComponent("Actual.app")
+        let alias = directory.appendingPathComponent("Alias.app")
+        let file = directory.appendingPathComponent("whitelist.json")
+        try createAppBundle(at: app)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: app)
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.append(data: alias.path))
+        XCTAssertTrue(list.contains(app.path))
+        XCTAssertTrue(list.append(data: app.path))
+        XCTAssertEqual(list.records, [alias.path])
+        let restored = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(restored.contains(app.resolvingSymlinksInPath().path))
+        XCTAssertTrue(restored.remove(data: app.path))
+        XCTAssertTrue(restored.records.isEmpty)
+        XCTAssertFalse(restored.contains(alias.path))
+    }
+
     func testBlackListContainsUsesIndex() {
         let blackList = makeBlackList(records: ["/Applications/A.app"])
 

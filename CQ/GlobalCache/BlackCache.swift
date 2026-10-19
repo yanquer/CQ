@@ -101,15 +101,22 @@ final class BlackList: ObservableObject {
         return true
     }
 
+    /// 先按实际路径常数时间命中，必要时解析路径别名；不在每次按键时遍历白名单。
     func contains(_ path: String) -> Bool {
-        recordSet.contains(path)
+        recordSet.contains(path) || recordSet.contains(canonicalPath(path))
+    }
+
+    /// 统一同一应用的符号链接路径；相对路径不解释为当前工作目录下的应用。
+    private func canonicalPath(_ path: String) -> String {
+        guard path.hasPrefix("/") else { return path }
+        return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     /// 添加白名单应用；重复项视为成功，写入失败时保留原有列表。
     @discardableResult
     func append(data: String?) -> Bool {
         guard let data, !data.isEmpty, prepareMutation() else { return false }
-        guard !recordSet.contains(data) else { return true }
+        guard !contains(data) else { storageError = nil; return true }
         return persist(records + [data])
     }
 
@@ -117,12 +124,16 @@ final class BlackList: ObservableObject {
     @discardableResult
     func remove(data: String?) -> Bool {
         guard let data, !data.isEmpty, prepareMutation() else { return false }
-        guard recordSet.contains(data) else { return true }
-        return persist(records.filter { $0 != data })
+        guard contains(data) else { storageError = nil; return true }
+        let canonical = canonicalPath(data)
+        return persist(records.filter { canonicalPath($0) != canonical })
     }
 
+    /// 按规范路径去重并更新索引，显示和保存仍保留用户选择的原始路径。
     private func syncRecords(_ records: [String]) {
-        self.records = records
-        recordSet = Set(records)
+        var paths = Set<String>()
+        let normalized = records.filter { paths.insert(canonicalPath($0)).inserted }
+        recordSet = paths
+        self.records = normalized
     }
 }
