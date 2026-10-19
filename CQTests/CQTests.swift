@@ -106,6 +106,47 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(decision, .blockAndPrompt(.confirmExit(window: 0.05)))
     }
 
+    /// 验证清理回调尚未执行时，到达或超过截止时间的按键仍重新要求确认。
+    func testConfirmationDeadlineDoesNotDependOnTimerDelivery() {
+        for elapsed: TimeInterval in [1000, 1500] {
+            let state = QuitGuardState()
+            let config = makeConfig(doubleTap: 1)
+            _ = state.handleCommandQKeyDown(now: 0, config: config)
+            state.markKeyUp()
+            XCTAssertEqual(
+                state.handleCommandQKeyDown(now: elapsed, config: config),
+                .blockAndPrompt(.confirmExit(window: 1))
+            )
+            state.reset()
+        }
+    }
+
+    /// 验证截止时间前的第二次真实按压仍可确认退出。
+    func testConfirmationImmediatelyBeforeDeadlinePasses() {
+        let state = QuitGuardState()
+        let config = makeConfig(doubleTap: 1)
+        _ = state.handleCommandQKeyDown(now: 0, config: config)
+        state.markKeyUp()
+        XCTAssertEqual(state.handleCommandQKeyDown(now: 999, config: config), .passAndReset(nil))
+    }
+
+    /// 验证确认过期不会清除仍按住的 Q 键，重复按压仍按长按处理。
+    func testExpiredConfirmationPreservesHeldKeyTracking() {
+        let state = QuitGuardState()
+        let config = makeConfig(doubleTap: 1)
+        _ = state.handleCommandQKeyDown(now: 0, config: config)
+        XCTAssertEqual(
+            state.handleCommandQKeyDown(now: 1500, config: config),
+            .passAndReset(.forwardedLongPress)
+        )
+        state.markKeyUp()
+        XCTAssertEqual(
+            state.handleCommandQKeyDown(now: 1600, config: config),
+            .blockAndPrompt(.confirmExit(window: 1))
+        )
+        state.reset()
+    }
+
     func testLongPressDoesNotBecomeSecondConfirmation() {
         let config = makeConfig()
         let state = QuitGuardState()

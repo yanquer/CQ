@@ -136,7 +136,7 @@ final class EventHandler {
             return .pass
         }
 
-        let now = Date().timeIntervalSince1970 * 1000
+        let now = ProcessInfo.processInfo.systemUptime * 1000
         let decision = state.handleCommandQKeyDown(
             now: now,
             config: config,

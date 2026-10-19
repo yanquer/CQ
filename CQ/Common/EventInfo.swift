@@ -153,6 +153,7 @@ extension QuitPrompt {
 
 final class QuitGuardState {
     private var resetWorkItem: DispatchWorkItem?
+    private var confirmationDeadline: TimeInterval?
     private var hasShownLongPressPrompt = false
 
     private(set) var isAwaitingSecondPress = false
@@ -165,7 +166,7 @@ final class QuitGuardState {
 
     /// 处理一次 Cmd+Q keyDown，并区分真实二次按下与未松手长按重复事件。
     /// - Parameters:
-    ///   - now: 当前事件发生时间，单位为毫秒。
+    ///   - now: 单调时钟上的事件时间，单位为毫秒。
     ///   - config: 当前退出保护配置。
     ///   - isAutorepeat: 当前 keyDown 是否为系统自动重复事件。
     /// - Returns: 本次 keyDown 对应的退出保护决策。
@@ -174,13 +175,16 @@ final class QuitGuardState {
         config: QuitGuardConfig,
         isAutorepeat: Bool = false
     ) -> QuitDecision {
+        if let confirmationDeadline, now >= confirmationDeadline {
+            clearConfirmation()
+        }
         if firstCommandQTime != nil || isAutorepeat {
             return passLongPress(now: now)
         }
 
         firstCommandQTime = now
         if !isAwaitingSecondPress {
-            beginAwaitingSecondPress(timeout: config.doubleTapInterval)
+            beginAwaitingSecondPress(now: now, timeout: config.doubleTapInterval)
             return .blockAndPrompt(.confirmExit(window: config.doubleTapInterval))
         }
 
@@ -194,9 +198,9 @@ final class QuitGuardState {
         hasShownLongPressPrompt = false
     }
 
+    /// 清除确认期限及物理按压状态，用于切换应用、停止或确认退出。
     func reset() {
-        cancelPendingReset()
-        isAwaitingSecondPress = false
+        clearConfirmation()
         firstCommandQTime = nil
         isLongPress = false
         hasShownLongPressPrompt = false
@@ -209,8 +213,7 @@ final class QuitGuardState {
         if firstCommandQTime == nil {
             firstCommandQTime = now
         }
-        cancelPendingReset()
-        isAwaitingSecondPress = false
+        clearConfirmation()
         isLongPress = true
         guard !hasShownLongPressPrompt else {
             return .pass
@@ -219,15 +222,25 @@ final class QuitGuardState {
         return .passAndReset(.forwardedLongPress)
     }
 
-    private func beginAwaitingSecondPress(timeout: TimeInterval) {
+    /// 保存单调时钟截止时间，定时器仅负责及时清理过期确认。
+    private func beginAwaitingSecondPress(now: TimeInterval, timeout: TimeInterval) {
         isAwaitingSecondPress = true
+        confirmationDeadline = now + timeout * 1000
         scheduleReset(after: timeout)
     }
 
+    /// 只清除确认窗口，保留尚未松开的 Q 键跟踪以正确识别长按。
+    private func clearConfirmation() {
+        cancelPendingReset()
+        isAwaitingSecondPress = false
+        confirmationDeadline = nil
+    }
+
+    /// 安排确认窗口清理；即使回调延迟，按键入口也会独立检查截止时间。
     private func scheduleReset(after timeout: TimeInterval) {
         cancelPendingReset()
         let workItem = DispatchWorkItem { [weak self] in
-            self?.reset()
+            self?.clearConfirmation()
         }
         resetWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
