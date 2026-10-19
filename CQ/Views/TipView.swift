@@ -95,7 +95,14 @@ private struct TipCardView: View {
             }
 
             if presentation.prompt.showsProgress {
-                TipProgressBar(duration: presentation.duration)
+                HStack(spacing: 8) {
+                    Text("提示停留")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(MenuPanelStyle.textSecondary)
+                        .fixedSize()
+                    TipProgressBar(duration: presentation.duration)
+                        .accessibilityLabel("提示窗口停留时间")
+                }
             }
         }
         .padding(.horizontal, 18)
