@@ -1206,6 +1206,8 @@ final class CQTests: XCTestCase {
     /// 验证退出保护遥测会把最新快照写入诊断文件并保留有限历史。
     func testQuitGuardTelemetryPersistsLatestSnapshot() {
         let folderName = "CQTests.\(UUID().uuidString)"
+        let directory = AppFileStore(fileName: "quit-guard-diagnostics.json", folderName: folderName).fileURL.deletingLastPathComponent()
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let store = QuitGuardDiagnosticStore(
             fileName: "quit-guard-diagnostics.json",
             folderName: folderName
@@ -1316,6 +1318,25 @@ final class CQTests: XCTestCase {
         )
         delegate.syncRuntimeStatus(.tapCreateFailed)
         XCTAssertEqual(store.status, .tapDisabled)
+    }
+
+    /// 验证健康状态不变时只读取轻量状态，不重复重建或产生需要落盘的遥测。
+    @MainActor
+    func testUnchangedHealthChecksDoNotRebuildOrPersistTelemetry() {
+        let availability = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let telemetry = TelemetrySpy()
+        let tap = TapControllerSpy()
+        let delegate = makeAppDelegate(
+            permissionService: PermissionServiceSpy(currentAvailability: availability),
+            runtimeStore: QuitGuardRuntimeStore(status: .ready), tapSpy: tap, telemetry: telemetry
+        )
+        _ = delegate.readAvailability(promptAccessibility: false)
+        delegate.syncQuitGuardStatus(with: availability, refreshTap: false)
+        let eventCount = telemetry.events.count
+        for _ in 0..<10 { delegate.refreshPermissionsIfNeeded() }
+        XCTAssertEqual(tap.startCallCount, 1)
+        XCTAssertEqual(tap.refreshCallCount, 0)
+        XCTAssertEqual(telemetry.events.count, eventCount)
     }
 
     /// 验证权限撤销后停止、重新授权后恢复，未变化时不重复重建。
@@ -1932,22 +1953,24 @@ private extension CQTests {
         )
     }
 
+    /// 为每个测试分配独立偏好域，并在结束时清理本测试的数据。
     func makeUserDefaults() -> UserDefaults {
         let suiteName = "CQTests.\(UUID().uuidString)"
         let userDefaults = UserDefaults(suiteName: suiteName)!
         userDefaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { userDefaults.removePersistentDomain(forName: suiteName) }
         return userDefaults
     }
 
     func makeTempFileURL() -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        return directory.appendingPathComponent("whitelist.json")
+        makeTempDirectoryURL().appendingPathComponent("whitelist.json")
     }
 
+    /// 返回仅供当前测试使用的临时目录，测试结束后移除自己的文件。
     func makeTempDirectoryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory
     }
 
     func createDirectories(_ urls: [URL]) throws {
