@@ -177,6 +177,8 @@ final class EventTapController: QuitGuardControlling {
             return .passUnretained(event)
         }
 
+        // 停止或停用之后的迟到事件只能透传，不能重新建立确认状态或显示提示。
+        guard tap != nil, currentTapSnapshot.isEnabled else { return .passUnretained(event) }
         let decision = handler.decision(for: event, eventType: eventType)
         return output(for: decision, event: event)
     }

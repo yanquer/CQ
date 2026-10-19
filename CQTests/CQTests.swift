@@ -901,6 +901,29 @@ final class CQTests: XCTestCase {
         XCTAssertFalse(model.isVisible)
     }
 
+    /// 验证停止后的迟到键盘回调仅透传，不重建确认状态或重新排队提示。
+    func testStoppedControllerIgnoresLateKeyboardCallback() {
+        let state = QuitGuardState()
+        let handler = EventHandler(
+            config: makeConfig(), state: state, isBlockedApp: { _ in false },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12),
+            currentApplication: { QuitGuardApplication(processIdentifier: 100, bundlePath: nil) }
+        )
+        var presentationCount = 0
+        let controller = EventTapController(
+            config: makeConfig(), handler: handler,
+            tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
+            tapEnabledChecker: { _ in true }, tipPresenter: { _, _ in presentationCount += 1 }
+        )
+        XCTAssertTrue(controller.start())
+        controller.stop()
+        let result = controller.handle(event: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        XCTAssertNotNil(result)
+        waitForAsyncWork()
+        XCTAssertFalse(state.isAwaitingSecondPress)
+        XCTAssertEqual(presentationCount, 0)
+    }
+
     /// 验证应用切换及停止都会撤销排队中的提示，不显示已经失效的确认。
     func testQueuedTipIsCancelledByResetAndStop() {
         var presentationCount = 0
