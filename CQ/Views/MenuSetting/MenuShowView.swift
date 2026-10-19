@@ -204,6 +204,8 @@ final class MenuPanelModel: ObservableObject {
     private let quitAction: () -> Void
     private let recheckProtectionAction: () -> Void
     private var cancellables: Set<AnyCancellable> = []
+    private var appPickerRequestID: UUID?
+    private var appPickerLoadWorkItem: DispatchWorkItem?
 
     /// 初始化面板配置、运行状态订阅及用户操作回调。
     init(
@@ -355,6 +357,9 @@ final class MenuPanelModel: ObservableObject {
     }
 
     func dismissAppPicker() {
+        appPickerRequestID = nil
+        appPickerLoadWorkItem?.cancel()
+        appPickerLoadWorkItem = nil
         isShowingAppPicker = false
         isLoadingAppPicker = false
         appPickerSearchText = ""
@@ -368,6 +373,11 @@ final class MenuPanelModel: ObservableObject {
             guard let self else { return }
             self.appendWhitelist(self.systemAppPicker.pickApp())
         }
+    }
+
+    /// 面板释放时取消尚未启动的扫描，执行中的结果不会持有面板。
+    deinit {
+        appPickerLoadWorkItem?.cancel()
     }
 
     func quitApp() {
@@ -437,6 +447,7 @@ private extension MenuPanelModel {
 
     /// 每次打开选择层时在后台刷新目录，避免新安装或卸载的应用被旧缓存掩盖。
     func presentAppPicker() {
+        guard !isShowingAppPicker else { return }
         whitelistError = blackList.storageError
         isShowingAppPicker = true
         selectedAppPickerItem = nil
@@ -452,24 +463,29 @@ private extension MenuPanelModel {
         }
     }
 
+    /// 取消未启动的旧扫描，并用请求标识隔离已经开始的异步结果。
     func refreshAppPickerItemsIfNeeded(refresh: Bool = false) {
         guard refresh || appPickerItems.isEmpty else {
             refreshFilteredAppPickerItems()
             return
         }
+        appPickerLoadWorkItem?.cancel()
+        let requestID = UUID()
+        appPickerRequestID = requestID
         isLoadingAppPicker = true
-        appCatalogQueue.async { [weak self] in
-            let items = self?.appCatalog.loadApps(refresh: refresh) ?? []
-            DispatchQueue.main.async {
-                self?.finishLoadingAppPicker(items)
+        let catalog = appCatalog
+        let workItem = DispatchWorkItem { [weak self] in
+            let items = catalog.loadApps(refresh: refresh)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isShowingAppPicker, self.appPickerRequestID == requestID else { return }
+                self.appPickerLoadWorkItem = nil
+                self.appPickerItems = items
+                self.isLoadingAppPicker = false
+                self.refreshFilteredAppPickerItems()
             }
         }
-    }
-
-    func finishLoadingAppPicker(_ items: [AppPickerItem]) {
-        appPickerItems = items
-        isLoadingAppPicker = false
-        refreshFilteredAppPickerItems()
+        appPickerLoadWorkItem = workItem
+        appCatalogQueue.async(execute: workItem)
     }
 
     func refreshFilteredAppPickerItems() {

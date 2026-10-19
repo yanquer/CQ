@@ -1369,6 +1369,28 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(model.appPickerItems.map(\.name), ["B"])
     }
 
+    /// 验证关闭后重新打开选择层时，旧扫描结果不能结束新一轮加载或覆盖新列表。
+    func testOldCatalogResultDoesNotFinishReopenedPicker() {
+        let firstStarted = expectation(description: "第一次扫描开始")
+        let secondStarted = expectation(description: "第二次扫描开始")
+        let catalog = BlockingAppCatalogSpy(firstStarted: { firstStarted.fulfill() }, secondStarted: { secondStarted.fulfill() })
+        defer { catalog.firstRelease.signal(); catalog.secondRelease.signal() }
+        let model = makeMenuPanelModel(records: [], appCatalog: catalog)
+        model.addWhitelistApp()
+        wait(for: [firstStarted], timeout: 1)
+        model.dismissAppPicker()
+        model.addWhitelistApp()
+        catalog.firstRelease.signal()
+        wait(for: [secondStarted], timeout: 1)
+        waitForAsyncWork()
+        XCTAssertTrue(model.isLoadingAppPicker)
+        XCTAssertTrue(model.appPickerItems.isEmpty)
+        catalog.secondRelease.signal()
+        waitForAsyncWork()
+        XCTAssertFalse(model.isLoadingAppPicker)
+        XCTAssertEqual(model.appPickerItems.map(\.name), ["New"])
+    }
+
     func testMenuPanelAppPickerLoadsCatalogItems() {
         let item = makeAppPickerItem("/Applications/Safari.app")
         let model = makeMenuPanelModel(
@@ -1797,5 +1819,33 @@ private final class DiagnosticPersistenceSpy: QuitGuardDiagnosticPersisting {
         saveCallCount += 1
         savedReports.append(report)
         return saveResult
+    }
+}
+
+/// 用有界等待控制两轮扫描返回顺序，复现关闭重开时的旧结果竞态。
+private final class BlockingAppCatalogSpy: InstalledAppCataloging {
+    let firstRelease = DispatchSemaphore(value: 0)
+    let secondRelease = DispatchSemaphore(value: 0)
+    private let firstStarted: () -> Void
+    private let secondStarted: () -> Void
+    private var loadCount = 0
+
+    /// 注入扫描开始通知，测试无需依赖不确定的磁盘速度。
+    init(firstStarted: @escaping () -> Void, secondStarted: @escaping () -> Void) {
+        self.firstStarted = firstStarted
+        self.secondStarted = secondStarted
+    }
+
+    /// 按串行扫描次序返回旧与新应用列表。
+    func loadApps(refresh: Bool) -> [AppPickerItem] {
+        loadCount += 1
+        if loadCount == 1 {
+            firstStarted()
+            _ = firstRelease.wait(timeout: .now() + 3)
+            return [AppPickerItem(url: URL(fileURLWithPath: "/Applications/Old.app"))]
+        }
+        secondStarted()
+        _ = secondRelease.wait(timeout: .now() + 3)
+        return [AppPickerItem(url: URL(fileURLWithPath: "/Applications/New.app"))]
     }
 }

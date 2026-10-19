@@ -32,6 +32,7 @@ final class InstalledAppCatalog: InstalledAppCataloging {
     private let fileManager: FileManager
     private let appDirectories: [String]
     private var cachedItems: [AppPickerItem] = []
+    private let scanLock = NSLock()
 
     init(
         fileManager: FileManager = .default,
@@ -41,7 +42,10 @@ final class InstalledAppCatalog: InstalledAppCataloging {
         self.appDirectories = appDirectories
     }
 
+    /// 串行保护共享目录缓存，避免多个面板在不同后台队列上同时读写。
     func loadApps(refresh: Bool = false) -> [AppPickerItem] {
+        scanLock.lock()
+        defer { scanLock.unlock() }
         if !refresh, !cachedItems.isEmpty {
             return cachedItems
         }
@@ -116,6 +120,7 @@ final class AppBlack {
         self.activateObserver = nil
     }
 
+    /// 释放时清理通知订阅，避免遗留监听。
     deinit {
         if let activateObserver { workspace.notificationCenter.removeObserver(activateObserver) }
     }
