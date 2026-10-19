@@ -84,7 +84,7 @@ final class CQTests: XCTestCase {
         state.markKeyUp()
         let nextPress = state.handleCommandQKeyDown(now: 2_000, config: config)
 
-        XCTAssertEqual(longPress, .passAndReset(.ignoredLongPress))
+        XCTAssertEqual(longPress, .passAndReset(.forwardedLongPress))
         XCTAssertEqual(nextPress, .blockAndPrompt(.confirmExit(window: 3)))
     }
 
@@ -104,7 +104,7 @@ final class CQTests: XCTestCase {
             isAutorepeat: true
         )
 
-        XCTAssertEqual(firstAutorepeat, .passAndReset(.ignoredLongPress))
+        XCTAssertEqual(firstAutorepeat, .passAndReset(.forwardedLongPress))
         XCTAssertEqual(nextAutorepeat, .pass)
         XCTAssertFalse(state.isAwaitingSecondPress)
         XCTAssertTrue(state.isLongPress)
@@ -149,7 +149,7 @@ final class CQTests: XCTestCase {
         )
 
         XCTAssertEqual(firstDecision, .blockAndPrompt(.confirmExit(window: 3)))
-        XCTAssertEqual(repeatDecision, .passAndReset(.ignoredLongPress))
+        XCTAssertEqual(repeatDecision, .passAndReset(.forwardedLongPress))
     }
 
     /// 验证长按后以任意修饰键组合松开 Q，下一次按压都重新进入确认。
@@ -273,11 +273,11 @@ final class CQTests: XCTestCase {
         XCTAssertTrue(prompt.showsProgress)
     }
 
-    func testIgnoredLongPressPromptUsesSecondaryStyle() {
-        let prompt = QuitPrompt.ignoredLongPress
+    func testForwardedLongPressPromptUsesSecondaryStyle() {
+        let prompt = QuitPrompt.forwardedLongPress
 
-        XCTAssertEqual(prompt.title, "已忽略长按 Cmd+Q")
-        XCTAssertEqual(prompt.message, "松开后重新按下，才会计入退出确认")
+        XCTAssertEqual(prompt.title, "长按已交由应用处理")
+        XCTAssertEqual(prompt.message, "当前应用将按自身规则处理退出")
         XCTAssertNil(prompt.badgeText)
         XCTAssertFalse(prompt.showsProgress)
     }

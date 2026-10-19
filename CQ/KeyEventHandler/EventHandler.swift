@@ -142,7 +142,7 @@ final class EventHandler {
             config: config,
             isAutorepeat: isAutorepeat
         )
-        if decision == .passAndReset(.ignoredLongPress) {
+        if decision == .passAndReset(.forwardedLongPress) {
             AppLog.info("检测到长按 Cmd+Q，已透传重复退出事件")
         }
         return decision

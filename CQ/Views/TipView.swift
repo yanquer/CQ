@@ -143,7 +143,7 @@ private extension TipCardView {
                     endPoint: .bottomTrailing
                 )
             )
-        case .ignoredLongPress:
+        case .forwardedLongPress:
             return AnyShapeStyle(MenuPanelStyle.controlFill)
         }
     }
@@ -230,11 +230,11 @@ private extension TipProgressBar {
     )
 }
 
-#Preview("忽略长按") {
+#Preview("长按透传") {
     TipView(
         model: TipOverlayModel(
             presentation: TipPresentation(
-                prompt: .ignoredLongPress,
+                prompt: .forwardedLongPress,
                 duration: 1
             )
         )

@@ -97,7 +97,7 @@ enum QuitDecision: Equatable {
 
 enum QuitPrompt: Equatable {
     case confirmExit(window: TimeInterval)
-    case ignoredLongPress
+    case forwardedLongPress
 }
 
 extension QuitPrompt {
@@ -105,8 +105,8 @@ extension QuitPrompt {
         switch self {
         case .confirmExit:
             return "已拦截 Cmd+Q"
-        case .ignoredLongPress:
-            return "已忽略长按 Cmd+Q"
+        case .forwardedLongPress:
+            return "长按已交由应用处理"
         }
     }
 
@@ -114,8 +114,8 @@ extension QuitPrompt {
         switch self {
         case .confirmExit(let window):
             return "\(displaySeconds(for: window)) 秒内再按一次即可退出"
-        case .ignoredLongPress:
-            return "松开后重新按下，才会计入退出确认"
+        case .forwardedLongPress:
+            return "当前应用将按自身规则处理退出"
         }
     }
 
@@ -123,7 +123,7 @@ extension QuitPrompt {
         switch self {
         case .confirmExit:
             return "⌘Q"
-        case .ignoredLongPress:
+        case .forwardedLongPress:
             return nil
         }
     }
@@ -132,7 +132,7 @@ extension QuitPrompt {
         switch self {
         case .confirmExit:
             return "keyboard"
-        case .ignoredLongPress:
+        case .forwardedLongPress:
             return "hand.tap.fill"
         }
     }
@@ -141,7 +141,7 @@ extension QuitPrompt {
         switch self {
         case .confirmExit:
             return true
-        case .ignoredLongPress:
+        case .forwardedLongPress:
             return false
         }
     }
@@ -216,7 +216,7 @@ final class QuitGuardState {
             return .pass
         }
         hasShownLongPressPrompt = true
-        return .passAndReset(.ignoredLongPress)
+        return .passAndReset(.forwardedLongPress)
     }
 
     private func beginAwaitingSecondPress(timeout: TimeInterval) {
