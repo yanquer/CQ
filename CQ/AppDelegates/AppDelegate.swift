@@ -93,7 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppLog.info("检测到 XCTest 环境，跳过应用启动副作用")
             return
         }
-        AppBlack.this.startObservingWorkspace()
+        AppBlack.this.startObservingWorkspace { [weak self] in
+            self?.eventHandler.resetRuntimeState()
+        }
         registerWorkspaceNotifications()
         configureQuitGuardAtLaunch()
         makeMenuButton()

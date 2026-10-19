@@ -102,7 +102,8 @@ final class AppBlack {
     private var currentAppPath: String?
     private var activateObserver: NSObjectProtocol?
 
-    func startObservingWorkspace() {
+    /// 监听前台应用切换，并通知退出保护清除旧应用的确认状态。
+    func startObservingWorkspace(onActivation: @escaping () -> Void = {}) {
         if activateObserver != nil {
             refreshCurrentAppPath()
             return
@@ -115,6 +116,7 @@ final class AppBlack {
             queue: .main
         ) { [weak self] notification in
             self?.updateCurrentAppPath(notification)
+            onActivation()
         }
     }
 

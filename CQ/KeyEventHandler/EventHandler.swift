@@ -99,17 +99,22 @@ final class EventHandler {
     private let state: QuitGuardState
     private let isBlockedApp: () -> Bool
     private let classifier: CommandQEventClassifier
+    private let currentAppPID: () -> pid_t?
+    private var trackedAppPID: pid_t?
 
+    /// 初始化退出事件处理器，并注入前台进程查询以隔离不同应用的确认状态。
     init(
         config: QuitGuardConfig,
         state: QuitGuardState,
         isBlockedApp: @escaping () -> Bool,
-        classifier: CommandQEventClassifier = CommandQEventClassifier()
+        classifier: CommandQEventClassifier = CommandQEventClassifier(),
+        currentAppPID: @escaping () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     ) {
         self.config = config
         self.state = state
         self.isBlockedApp = isBlockedApp
         self.classifier = classifier
+        self.currentAppPID = currentAppPID
     }
 
     func decision(for event: CGEvent, eventType: CGEventType) -> QuitDecision {
@@ -125,7 +130,9 @@ final class EventHandler {
         }
     }
 
+    /// 清除退出确认和目标进程，避免应用切换或恢复后沿用旧状态。
     func resetRuntimeState() {
+        trackedAppPID = nil
         state.reset()
     }
 
@@ -133,6 +140,11 @@ final class EventHandler {
     /// - Parameter isAutorepeat: 当前 keyDown 是否为系统自动重复事件。
     /// - Returns: 本次 keyDown 对应的退出保护决策。
     private func handleKeyDown(isAutorepeat: Bool) -> QuitDecision {
+        let appPID = currentAppPID()
+        if appPID == nil || appPID != trackedAppPID {
+            state.reset()
+            trackedAppPID = appPID
+        }
         if isBlockedApp() {
             state.reset()
             return .pass

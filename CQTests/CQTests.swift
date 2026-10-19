@@ -174,6 +174,48 @@ final class CQTests: XCTestCase {
         )
     }
 
+    /// 验证前台进程变化时，新应用的第一次退出仍需确认。
+    func testSwitchingApplicationsStartsNewConfirmation() {
+        var appPID: pid_t? = 100
+        let handler = EventHandler(
+            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { false },
+            currentAppPID: { appPID }
+        )
+        _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        _ = handler.decision(for: commandQEvent(keyDown: false, flags: []), eventType: .keyUp)
+        appPID = 200
+        XCTAssertEqual(
+            handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown),
+            .blockAndPrompt(.confirmExit(window: 3))
+        )
+    }
+
+    /// 验证切换出去再返回同一进程时，激活通知清理的状态不会复用。
+    func testApplicationActivationResetDiscardsPendingConfirmation() {
+        let handler = makeHandler(isBlockedApp: false)
+        _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        _ = handler.decision(for: commandQEvent(keyDown: false, flags: []), eventType: .keyUp)
+        handler.resetRuntimeState()
+        XCTAssertEqual(
+            handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown),
+            .blockAndPrompt(.confirmExit(window: 3))
+        )
+    }
+
+    /// 验证无法识别前台进程时不会把两次按键合并成退出确认。
+    func testUnknownApplicationDoesNotReuseConfirmation() {
+        let handler = EventHandler(
+            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { false },
+            currentAppPID: { nil }
+        )
+        _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        _ = handler.decision(for: commandQEvent(keyDown: false, flags: []), eventType: .keyUp)
+        XCTAssertEqual(
+            handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown),
+            .blockAndPrompt(.confirmExit(window: 3))
+        )
+    }
+
     func testWakeResetClearsRuntimeState() {
         let handler = makeHandler(isBlockedApp: false)
         let firstDecision = handler.decision(
@@ -972,7 +1014,8 @@ private extension CQTests {
         EventHandler(
             config: makeConfig(),
             state: QuitGuardState(),
-            isBlockedApp: { isBlockedApp }
+            isBlockedApp: { isBlockedApp },
+            currentAppPID: { 100 }
         )
     }
 
