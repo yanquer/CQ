@@ -9,9 +9,16 @@ import Foundation
 
 struct QuitGuardSettings {
     static let defaultValue = QuitGuardSettings()
+    static let supportedInterval: ClosedRange<TimeInterval> = 1...8
 
     var doubleTapInterval: TimeInterval = 3
     var alertWindowCloseTime: TimeInterval = 3
+
+    /// 将有限数值限制为界面支持的整数秒，非有限值使用对应默认值。
+    static func validatedInterval(_ value: TimeInterval, fallback: TimeInterval) -> TimeInterval {
+        guard value.isFinite else { return fallback }
+        return min(max(value, supportedInterval.lowerBound), supportedInterval.upperBound).rounded()
+    }
 }
 
 final class QuitGuardSettingsStore {
@@ -39,17 +46,34 @@ final class QuitGuardSettingsStore {
         )
     }
 
+    /// 保存前再次规范化数值，防止直接调用存储层写入非法配置。
     func save(_ settings: QuitGuardSettings) {
-        userDefaults.set(settings.doubleTapInterval, forKey: Key.doubleTapInterval)
-        userDefaults.set(settings.alertWindowCloseTime, forKey: Key.alertWindowCloseTime)
+        userDefaults.set(
+            QuitGuardSettings.validatedInterval(settings.doubleTapInterval, fallback: QuitGuardSettings.defaultValue.doubleTapInterval),
+            forKey: Key.doubleTapInterval
+        )
+        userDefaults.set(
+            QuitGuardSettings.validatedInterval(settings.alertWindowCloseTime, fallback: QuitGuardSettings.defaultValue.alertWindowCloseTime),
+            forKey: Key.alertWindowCloseTime
+        )
     }
 
+    /// 只接受真正的数值类型，排除字符串与布尔值，并规范化范围及有限性。
     private func readValue(
         for key: String,
         default defaultValue: TimeInterval
     ) -> TimeInterval {
-        guard userDefaults.object(forKey: key) != nil else { return defaultValue }
-        return userDefaults.double(forKey: key)
+        guard let rawValue = userDefaults.object(forKey: key) else { return defaultValue }
+        guard let number = rawValue as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            AppLog.error("Invalid quit guard setting type: key=\(key); using default")
+            return defaultValue
+        }
+        let value = number.doubleValue
+        let validated = QuitGuardSettings.validatedInterval(value, fallback: defaultValue)
+        if value != validated {
+            AppLog.info("Normalized quit guard setting: key=\(key)")
+        }
+        return validated
     }
 }
 
@@ -58,30 +82,32 @@ final class QuitGuardConfig {
 
     private let store: QuitGuardSettingsStore
 
+    private var settings: QuitGuardSettings
+
     var doubleTapInterval: TimeInterval {
-        didSet {
+        get { settings.doubleTapInterval }
+        set {
+            settings.doubleTapInterval = QuitGuardSettings.validatedInterval(
+                newValue, fallback: QuitGuardSettings.defaultValue.doubleTapInterval
+            )
             persist()
         }
     }
 
     var alertWindowCloseTime: TimeInterval {
-        didSet {
+        get { settings.alertWindowCloseTime }
+        set {
+            settings.alertWindowCloseTime = QuitGuardSettings.validatedInterval(
+                newValue, fallback: QuitGuardSettings.defaultValue.alertWindowCloseTime
+            )
             persist()
         }
     }
 
+    /// 加载经过校验的配置，运行时赋值与持久化使用相同校验规则。
     init(store: QuitGuardSettingsStore = QuitGuardSettingsStore()) {
-        let settings = store.load()
         self.store = store
-        self.doubleTapInterval = settings.doubleTapInterval
-        self.alertWindowCloseTime = settings.alertWindowCloseTime
-    }
-
-    private var settings: QuitGuardSettings {
-        QuitGuardSettings(
-            doubleTapInterval: doubleTapInterval,
-            alertWindowCloseTime: alertWindowCloseTime
-        )
+        self.settings = store.load()
     }
 
     private func persist() {

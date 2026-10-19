@@ -103,6 +103,38 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(restored.alertWindowCloseTime, 5)
     }
 
+    /// 验证异常偏好类型与非有限数值回退默认值，有限数值限制在支持范围内。
+    func testSettingsLoadRejectsInvalidTypesAndNormalizesNumbers() {
+        let defaults = makeUserDefaults()
+        let store = QuitGuardSettingsStore(userDefaults: defaults)
+        let cases: [(Any, TimeInterval)] = [
+            ("invalid", 3), ("5", 3), (true, 3), ([1, 2], 3),
+            (-5.0, 1), (0.0, 1), (99.0, 8), (2.6, 3),
+            (Double.infinity, 3), (-Double.infinity, 3), (Double.nan, 3)
+        ]
+        for (value, expected) in cases {
+            defaults.set(value, forKey: "quit_guard.double_tap_interval")
+            defaults.set(value, forKey: "quit_guard.alert_window_close_time")
+            let settings = store.load()
+            XCTAssertEqual(settings.doubleTapInterval, expected)
+            XCTAssertEqual(settings.alertWindowCloseTime, expected)
+        }
+    }
+
+    /// 验证运行时赋值及直接保存均使用同一规则，不会让非法时长进入事件处理。
+    func testConfigAndStoreWritesNormalizeIntervals() {
+        let store = QuitGuardSettingsStore(userDefaults: makeUserDefaults())
+        let config = QuitGuardConfig(store: store)
+        config.doubleTapInterval = .nan
+        config.alertWindowCloseTime = 0
+        XCTAssertEqual(config.doubleTapInterval, 3)
+        XCTAssertEqual(config.alertWindowCloseTime, 1)
+        XCTAssertEqual(store.load().alertWindowCloseTime, 1)
+        store.save(QuitGuardSettings(doubleTapInterval: 100, alertWindowCloseTime: .infinity))
+        XCTAssertEqual(store.load().doubleTapInterval, 8)
+        XCTAssertEqual(store.load().alertWindowCloseTime, 3)
+    }
+
     func testFirstCommandQRequiresConfirmation() {
         let config = makeConfig()
         let state = QuitGuardState()
@@ -126,20 +158,21 @@ final class CQTests: XCTestCase {
     }
 
     func testTimeoutResetsConfirmation() {
-        let config = makeConfig(doubleTap: 0.05)
+        let config = makeConfig(doubleTap: 1)
         let state = QuitGuardState()
         let expectation = expectation(description: "等待确认状态过期")
 
         _ = state.handleCommandQKeyDown(now: 1_000, config: config)
         state.markKeyUp()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
             expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 1)
+        wait(for: [expectation], timeout: 2)
+        XCTAssertFalse(state.isAwaitingSecondPress)
 
         let decision = state.handleCommandQKeyDown(now: 2_000, config: config)
-        XCTAssertEqual(decision, .blockAndPrompt(.confirmExit(window: 0.05)))
+        XCTAssertEqual(decision, .blockAndPrompt(.confirmExit(window: 1)))
     }
 
     /// 验证清理回调尚未执行时，到达或超过截止时间的按键仍重新要求确认。

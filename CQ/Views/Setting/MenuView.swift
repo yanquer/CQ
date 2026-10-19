@@ -111,7 +111,7 @@ struct MenuSettingSliderRow: View {
                 Spacer()
                 MenuSettingValuePill(value: value)
             }
-            Slider(value: $value, in: 1...8, step: 1)
+            Slider(value: $value, in: QuitGuardSettings.supportedInterval, step: 1)
                 .tint(MenuPanelStyle.accent)
         }
     }
