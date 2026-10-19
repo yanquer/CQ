@@ -12,6 +12,37 @@ import ServiceManagement
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证新实例启动失败时不会退出仍可工作的当前应用。
+    @MainActor
+    func testRelaunchFailureKeepsCurrentProcessRunning() {
+        var didTerminate = false
+        var didReportFailure = false
+        AppRelauncher.restart(
+            launch: { $0(NSError(domain: "CQTests.Relaunch", code: 1)) },
+            terminate: { didTerminate = true },
+            reportFailure: { _ in didReportFailure = true }
+        )
+        XCTAssertFalse(didTerminate)
+        XCTAssertTrue(didReportFailure)
+    }
+
+    /// 验证必须收到新实例启动成功回调后才退出，而不是发出启动请求就退出。
+    @MainActor
+    func testRelaunchWaitsForNewInstanceBeforeTermination() {
+        var completion: AppRelauncher.Completion?
+        var didTerminate = false
+        AppRelauncher.restart(
+            launch: { completion = $0 },
+            terminate: { didTerminate = true },
+            reportFailure: { _ in XCTFail("Unexpected relaunch failure") }
+        )
+        XCTAssertFalse(didTerminate)
+        completion?(nil)
+        XCTAssertTrue(didTerminate)
+        XCTAssertTrue(AppRelauncher.makeLaunchConfiguration().createsNewApplicationInstance)
+        XCTAssertFalse(AppRelauncher.makeLaunchConfiguration().activates)
+    }
+
     func testQuitGuardSettingsStoreLoadsDefaults() {
         let userDefaults = makeUserDefaults()
         let store = QuitGuardSettingsStore(userDefaults: userDefaults)
