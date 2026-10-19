@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let menuPopoverController = MenuPopoverController()
     private var noAccessWindow: NSWindow?
     private var runtimeStoreStorage: QuitGuardRuntimeStore?
+    private var menuPanelModelStorage: MenuPanelModel?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var lastAvailability: QuitGuardAvailability?
     private var permissionTimer: Timer?
@@ -173,11 +174,15 @@ extension AppDelegate {
     /// 将实际运行状态与恢复操作绑定到菜单面板。
     @MainActor
     func makeMenuPanelModel() -> MenuPanelModel {
-        MenuPanelModel(
+        if let menuPanelModelStorage { return menuPanelModelStorage }
+        let model = MenuPanelModel(
+            config: config,
             runtimeStatus: runtimeStore.status,
             runtimeUpdates: runtimeStore.$status.eraseToAnyPublisher(),
             recheckProtectionAction: { [weak self] in self?.recheckQuitGuard() }
         )
+        menuPanelModelStorage = model
+        return model
     }
 
     /// 读取当前退出保护所依赖的权限快照。

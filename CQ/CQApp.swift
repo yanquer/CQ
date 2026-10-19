@@ -15,9 +15,8 @@ struct CQApp: App {
     
     var body: some Scene {
         Settings {
-            VStack{
-
-            }
+            SettingView(model: delegate.makeMenuPanelModel())
+                .onAppear { delegate.refreshPermissionsIfNeeded() }
         }
     }
 }

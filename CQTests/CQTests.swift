@@ -1316,6 +1316,26 @@ final class CQTests: XCTestCase {
         XCTAssertNil(model.autoLaunchMessage)
     }
 
+    /// 验证菜单和设置窗口使用同一个模型，并读取代理实际使用的配置。
+    @MainActor
+    func testMenuAndSettingsShareDelegateConfigurationAndDrafts() {
+        let config = makeConfig(doubleTap: 7)
+        let delegate = AppDelegate(
+            config: config, state: QuitGuardState(),
+            permissionService: PermissionServiceSpy(currentAvailability: QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)),
+            diagnosticService: makeDiagnosticService(), telemetry: TelemetrySpy(), runtimeStore: QuitGuardRuntimeStore(status: .ready),
+            eventTapControllerFactory: { _, _, _ in TapControllerSpy() }
+        )
+        let menu = delegate.makeMenuPanelModel()
+        let settings = delegate.makeMenuPanelModel()
+        XCTAssertTrue(menu === settings)
+        XCTAssertEqual(menu.doubleTapIntervalDraft, 7)
+        menu.doubleTapIntervalDraft = 6
+        menu.applySettings()
+        XCTAssertEqual(config.doubleTapInterval, 6)
+        XCTAssertEqual(settings.doubleTapIntervalDraft, 6)
+    }
+
     func testMenuPanelDraftsOnlyWriteAfterApply() {
         let config = makeConfig(doubleTap: 3, alert: 3)
         let model = MenuPanelModel(

@@ -142,6 +142,7 @@ extension AppDelegate {
     @MainActor
     @objc func MenuButtonToggle(sender: AnyObject) {
         refreshPermissionsIfNeeded()
+        makeMenuPanelModel().refreshAutoLaunchStatus()
         menuPopoverController.toggle(sender: sender)
     }
 }
