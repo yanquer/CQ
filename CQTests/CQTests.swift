@@ -846,6 +846,52 @@ final class CQTests: XCTestCase {
         CFMachPortInvalidate(port)
     }
 
+    /// 验证提示停留时间比确认窗口长时，过期后不继续声称再按一次即可退出。
+    func testTipReflectsExpiredConfirmationWhileStillVisible() {
+        let model = TipOverlayModel(presentation: TipPresentation(prompt: .confirmExit(window: 0.02), duration: 1))
+        model.present(prompt: .confirmExit(window: 0.02), duration: 1, animateIn: false)
+        waitForAsyncWork()
+        XCTAssertTrue(model.isVisible)
+        XCTAssertFalse(model.presentation.prompt.showsProgress)
+        XCTAssertTrue(model.presentation.prompt.title.contains("过期"))
+    }
+
+    /// 验证新提示不会被上一条提示的过期回调改写。
+    func testNewTipIgnoresOldConfirmationExpiry() {
+        let model = TipOverlayModel(presentation: TipPresentation(prompt: .confirmExit(window: 0.02), duration: 1))
+        model.present(prompt: .confirmExit(window: 0.02), duration: 1, animateIn: false)
+        model.present(prompt: .confirmExit(window: 2), duration: 2, animateIn: false)
+        waitForAsyncWork()
+        XCTAssertEqual(model.presentation.prompt, .confirmExit(window: 2))
+        model.dismiss()
+    }
+
+    /// 验证主队列延迟不会延长确认期限，已完全错过停留时间的提示直接丢弃。
+    func testDelayedTipUsesRemainingTimeAndDropsObsoletePresentation() {
+        var now: TimeInterval = 0
+        var prompts: [QuitPrompt] = []
+        var durations: [TimeInterval] = []
+        let controller = EventTapController(
+            config: makeConfig(alert: 8), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
+            tapEnabledChecker: { _ in true },
+            tipPresenter: { prompts.append($0); durations.append($1) }, tipTimeProvider: { now }
+        )
+        defer { controller.stop() }
+        XCTAssertTrue(controller.start())
+        let event = commandQEvent(keyDown: true, flags: [.maskCommand])
+        _ = controller.handle(event: event, eventType: .keyDown)
+        now = 4
+        waitForAsyncWork()
+        XCTAssertEqual(prompts, [.confirmationExpired])
+        XCTAssertEqual(durations, [4])
+        controller.resetConfirmation()
+        _ = controller.handle(event: event, eventType: .keyDown)
+        now = 13
+        waitForAsyncWork()
+        XCTAssertEqual(prompts.count, 1)
+    }
+
     /// 验证提示在入场回调执行前被关闭时，不会被旧动画回调重新显示。
     func testDismissedTipIsNotResurrectedByQueuedAnimation() {
         let model = TipOverlayModel(presentation: TipPresentation(prompt: .confirmExit(window: 3), duration: 3))

@@ -37,6 +37,7 @@ final class EventTapController: QuitGuardControlling {
     private let tapCreator: EventTapCreator
     private let tapEnabledChecker: (CFMachPort) -> Bool
     private let tipPresenter: ((QuitPrompt, TimeInterval) -> Void)?
+    private let tipTimeProvider: () -> TimeInterval
     private let strategies: [EventTapStrategy]
     private let tipAnimationDuration: TimeInterval = 0.18
 
@@ -65,7 +66,8 @@ final class EventTapController: QuitGuardControlling {
         strategies: [EventTapStrategy] = EventTapStrategy.defaultStrategies,
         tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator,
         tapEnabledChecker: @escaping (CFMachPort) -> Bool = CGEvent.tapIsEnabled,
-        tipPresenter: ((QuitPrompt, TimeInterval) -> Void)? = nil
+        tipPresenter: ((QuitPrompt, TimeInterval) -> Void)? = nil,
+        tipTimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.config = config
         self.handler = handler
@@ -74,6 +76,7 @@ final class EventTapController: QuitGuardControlling {
         self.tapCreator = tapCreator
         self.tapEnabledChecker = tapEnabledChecker
         self.tipPresenter = tipPresenter
+        self.tipTimeProvider = tipTimeProvider
     }
 
     /// 释放时同步移除端口和回调，再清理主线程窗口，避免悬空 userInfo 和遗留资源。
@@ -200,12 +203,22 @@ final class EventTapController: QuitGuardControlling {
         let requestID = UUID()
         tipRequestID = requestID
         let expectedLifecycle = lifecycleID
+        let requestedAt = tipTimeProvider()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.lifecycleID == expectedLifecycle, self.tipRequestID == requestID else { return }
-            if let tipPresenter = self.tipPresenter {
-                tipPresenter(prompt, duration)
+            let elapsed = max(0, self.tipTimeProvider() - requestedAt)
+            let remainingDuration = duration - elapsed
+            guard remainingDuration > 0 else { return }
+            let currentPrompt: QuitPrompt
+            if case .confirmExit(let window) = prompt {
+                currentPrompt = window > elapsed ? .confirmExit(window: window - elapsed) : .confirmationExpired
             } else {
-                self.presentTipOnMainThread(prompt, duration: duration)
+                currentPrompt = prompt
+            }
+            if let tipPresenter = self.tipPresenter {
+                tipPresenter(currentPrompt, remainingDuration)
+            } else {
+                self.presentTipOnMainThread(currentPrompt, duration: remainingDuration)
             }
         }
     }

@@ -18,6 +18,7 @@ final class TipOverlayModel: ObservableObject {
     @Published private(set) var presentation: TipPresentation
     @Published private(set) var isVisible = false
     private var visibilityID = UUID()
+    private var confirmationExpiryWorkItem: DispatchWorkItem?
 
     init(presentation: TipPresentation) {
         self.presentation = presentation
@@ -32,6 +33,7 @@ final class TipOverlayModel: ObservableObject {
         visibilityID = UUID()
         let expectedVisibilityID = visibilityID
         presentation = TipPresentation(prompt: prompt, duration: duration)
+        scheduleConfirmationExpiry(prompt)
         guard animateIn else {
             isVisible = true
             return
@@ -47,7 +49,29 @@ final class TipOverlayModel: ObservableObject {
     /// 隐藏提示并使尚未执行的入场动画失效。
     func dismiss() {
         visibilityID = UUID()
+        confirmationExpiryWorkItem?.cancel()
+        confirmationExpiryWorkItem = nil
         isVisible = false
+    }
+
+    /// 确认时限结束后保留停留中的提示，但不再宣称下一次按键可以直接退出。
+    private func scheduleConfirmationExpiry(_ prompt: QuitPrompt) {
+        confirmationExpiryWorkItem?.cancel()
+        confirmationExpiryWorkItem = nil
+        guard case .confirmExit(let window) = prompt else { return }
+        let expectedVisibilityID = visibilityID
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.visibilityID == expectedVisibilityID else { return }
+            self.presentation = TipPresentation(prompt: .confirmationExpired, duration: self.presentation.duration)
+            self.confirmationExpiryWorkItem = nil
+        }
+        confirmationExpiryWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, window), execute: workItem)
+    }
+
+    /// 释放提示模型时撤销过期任务。
+    deinit {
+        confirmationExpiryWorkItem?.cancel()
     }
 }
 
@@ -157,7 +181,7 @@ private extension TipCardView {
                     endPoint: .bottomTrailing
                 )
             )
-        case .forwardedLongPress:
+        case .forwardedLongPress, .confirmationExpired:
             return AnyShapeStyle(MenuPanelStyle.controlFill)
         }
     }

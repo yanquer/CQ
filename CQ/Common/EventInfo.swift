@@ -124,6 +124,7 @@ enum QuitDecision: Equatable {
 enum QuitPrompt: Equatable {
     case confirmExit(window: TimeInterval)
     case forwardedLongPress
+    case confirmationExpired
 }
 
 extension QuitPrompt {
@@ -133,6 +134,8 @@ extension QuitPrompt {
             return "已拦截 Cmd+Q"
         case .forwardedLongPress:
             return "长按已交由应用处理"
+        case .confirmationExpired:
+            return "退出确认已过期"
         }
     }
 
@@ -142,6 +145,8 @@ extension QuitPrompt {
             return "\(displaySeconds(for: window)) 秒内再按一次即可退出"
         case .forwardedLongPress:
             return "当前应用将按自身规则处理退出"
+        case .confirmationExpired:
+            return "再次按下 Cmd+Q 将重新开始确认"
         }
     }
 
@@ -149,7 +154,7 @@ extension QuitPrompt {
         switch self {
         case .confirmExit:
             return "⌘Q"
-        case .forwardedLongPress:
+        case .forwardedLongPress, .confirmationExpired:
             return nil
         }
     }
@@ -160,6 +165,8 @@ extension QuitPrompt {
             return "keyboard"
         case .forwardedLongPress:
             return "hand.tap.fill"
+        case .confirmationExpired:
+            return "clock"
         }
     }
 
@@ -167,7 +174,7 @@ extension QuitPrompt {
         switch self {
         case .confirmExit:
             return true
-        case .forwardedLongPress:
+        case .forwardedLongPress, .confirmationExpired:
             return false
         }
     }
