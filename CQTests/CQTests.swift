@@ -17,7 +17,8 @@ final class CQTests: XCTestCase {
     func testRelaunchFailureKeepsCurrentProcessRunning() {
         var didTerminate = false
         var didReportFailure = false
-        AppRelauncher.restart(
+        let relauncher = AppRelauncher()
+        relauncher.restart(
             launch: { $0(NSError(domain: "CQTests.Relaunch", code: 1)) },
             terminate: { didTerminate = true },
             reportFailure: { _ in didReportFailure = true }
@@ -31,7 +32,8 @@ final class CQTests: XCTestCase {
     func testRelaunchWaitsForNewInstanceBeforeTermination() {
         var completion: AppRelauncher.Completion?
         var didTerminate = false
-        AppRelauncher.restart(
+        let relauncher = AppRelauncher()
+        relauncher.restart(
             launch: { completion = $0 },
             terminate: { didTerminate = true },
             reportFailure: { _ in XCTFail("Unexpected relaunch failure") }
@@ -41,6 +43,40 @@ final class CQTests: XCTestCase {
         XCTAssertTrue(didTerminate)
         XCTAssertTrue(AppRelauncher.makeLaunchConfiguration().createsNewApplicationInstance)
         XCTAssertFalse(AppRelauncher.makeLaunchConfiguration().activates)
+    }
+
+    /// 验证启动尚未完成时的重复点击只会请求一个新实例，成功后继续阻止重复请求。
+    @MainActor
+    func testConcurrentRelaunchRequestsStartOnlyOneInstance() {
+        let relauncher = AppRelauncher()
+        var launchCount = 0
+        var completion: AppRelauncher.Completion?
+        let launch: AppRelauncher.Launcher = { callback in
+            launchCount += 1
+            completion = callback
+        }
+        relauncher.restart(launch: launch, terminate: {}, reportFailure: { _ in })
+        relauncher.restart(launch: launch, terminate: {}, reportFailure: { _ in })
+        XCTAssertEqual(launchCount, 1)
+        XCTAssertTrue(relauncher.isRestarting)
+        completion?(nil)
+        relauncher.restart(launch: launch, terminate: {}, reportFailure: { _ in })
+        XCTAssertEqual(launchCount, 1)
+    }
+
+    /// 验证启动失败会解除重启锁，用户可以再次尝试。
+    @MainActor
+    func testFailedRelaunchCanBeRetried() {
+        let relauncher = AppRelauncher()
+        var launchCount = 0
+        let launch: AppRelauncher.Launcher = { callback in
+            launchCount += 1
+            callback(NSError(domain: "CQTests.Relaunch", code: 1))
+        }
+        relauncher.restart(launch: launch, terminate: {}, reportFailure: { _ in })
+        XCTAssertFalse(relauncher.isRestarting)
+        relauncher.restart(launch: launch, terminate: {}, reportFailure: { _ in })
+        XCTAssertEqual(launchCount, 2)
     }
 
     func testQuitGuardSettingsStoreLoadsDefaults() {

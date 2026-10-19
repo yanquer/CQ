@@ -34,7 +34,7 @@ extension AppDelegate {
     /// 确认系统成功启动新实例后再退出，启动失败时保留当前应用并提示原因。
     @MainActor
     static func restartCQ() {
-        AppRelauncher.restart { error in
+        AppRelauncher.shared.restart { error in
             AppLog.error("Application relaunch failed: \(error)")
             let alert = NSAlert()
             alert.messageText = "无法重启 CQ"
@@ -46,18 +46,27 @@ extension AppDelegate {
 
 /// 通过系统启动 API 创建独立新实例，避免重启请求仅激活旧实例。
 @MainActor
-enum AppRelauncher {
+final class AppRelauncher {
+    static let shared = AppRelauncher()
+    private(set) var isRestarting = false
+
     typealias Completion = @MainActor (Error?) -> Void
     typealias Launcher = @MainActor (@escaping Completion) -> Void
 
     /// 等待新实例启动结果再决定退出；失败时向界面反馈并保留原进程。
-    static func restart(
-        launch: Launcher = launchNewInstance,
+    func restart(
+        launch: Launcher = AppRelauncher.launchNewInstance,
         terminate: @escaping @MainActor () -> Void = { NSApp.terminate(nil) },
         reportFailure: @escaping @MainActor (Error) -> Void
     ) {
-        launch { error in
+        guard !isRestarting else {
+            AppLog.info("Relaunch already in progress; ignoring duplicate request")
+            return
+        }
+        isRestarting = true
+        launch { [self] error in
             if let error {
+                isRestarting = false
                 reportFailure(error)
                 return
             }
