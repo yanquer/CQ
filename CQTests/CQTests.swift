@@ -1142,6 +1142,34 @@ final class CQTests: XCTestCase {
         XCTAssertTrue(model.hasPendingChanges)
     }
 
+    /// 验证损坏文件不会被当成空列表覆盖，修复文件后重试保留已有记录。
+    func testCorruptWhitelistIsPreservedAndCanRecover() throws {
+        let file = makeTempFileURL()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let corrupt = Data("not-json".utf8)
+        try corrupt.write(to: file)
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertFalse(list.append(data: "/Applications/B.app"))
+        XCTAssertEqual(try Data(contentsOf: file), corrupt)
+        try JSONEncoder().encode(["/Applications/A.app"]).write(to: file)
+        XCTAssertTrue(list.append(data: "/Applications/B.app"))
+        XCTAssertEqual(list.records, ["/Applications/A.app", "/Applications/B.app"])
+    }
+
+    /// 验证运行期间文件损坏也不会在下一次修改时被覆盖。
+    func testWhitelistCorruptionAfterLoadPreservesOriginalBytes() throws {
+        let file = makeTempFileURL()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.append(data: "/Applications/A.app"))
+        let corrupt = Data("truncated [".utf8)
+        try corrupt.write(to: file)
+        XCTAssertFalse(list.remove(data: "/Applications/A.app"))
+        XCTAssertTrue(list.contains("/Applications/A.app"))
+        XCTAssertEqual(try Data(contentsOf: file), corrupt)
+    }
+
     /// 验证保存失败不会更新白名单列表及索引，恢复磁盘后可重试成功。
     func testWhitelistWriteFailurePreservesRecordsAndIndex() throws {
         let directory = makeTempDirectoryURL()
@@ -1158,6 +1186,7 @@ final class CQTests: XCTestCase {
         XCTAssertFalse(list.contains("/Applications/B.app"))
         try FileManager.default.removeItem(at: file)
         XCTAssertTrue(list.append(data: "/Applications/B.app"))
+        XCTAssertEqual(list.records, ["/Applications/A.app", "/Applications/B.app"])
         XCTAssertEqual(WhitelistStore(fileURL: file).load(), list.records)
     }
 

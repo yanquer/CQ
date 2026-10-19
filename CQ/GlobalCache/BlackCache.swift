@@ -23,8 +23,13 @@ final class WhitelistStore {
         fileStore.fileURL
     }
 
+    /// 保留读取失败信息，只有首次缺失才视为空白名单。
+    func loadResult() -> Result<[String]?, Error> {
+        fileStore.loadResult([String].self).map { $0.map(normalize) }
+    }
+
     func load() -> [String] {
-        normalize(fileStore.load([String].self) ?? [])
+        (try? loadResult().get()) ?? []
     }
 
     /// 返回规范化后的白名单是否成功写入磁盘。
@@ -47,6 +52,8 @@ final class BlackList: ObservableObject {
     static let this = BlackList()
 
     @Published private(set) var records: [String]
+    @Published private(set) var storageError: String?
+    private var requiresReload = false
 
     private var recordSet: Set<String>
     private let store: WhitelistStore
@@ -58,14 +65,39 @@ final class BlackList: ObservableObject {
         loadFromDisk()
     }
 
+    /// 读取失败时保留内存和原文件，向界面报告错误；恢复后可在下一次操作前重读。
     private func loadFromDisk() {
-        syncRecords(store.load())
+        switch store.loadResult() {
+        case .success(let loadedRecords):
+            syncRecords(loadedRecords ?? records)
+            requiresReload = false
+            storageError = nil
+        case .failure:
+            requiresReload = true
+            storageError = "白名单无法读取，已保留原文件。修复文件或访问权限后重试。"
+        }
+    }
+
+    /// 修改前检查磁盘仍可读取，避免启动后发生的文件损坏被静默覆盖。
+    private func prepareMutation() -> Bool {
+        if requiresReload { loadFromDisk() }
+        guard !requiresReload else { return false }
+        if case .failure = store.loadResult() {
+            requiresReload = true
+            storageError = "白名单无法读取，已保留原文件。修复文件或访问权限后重试。"
+            return false
+        }
+        return true
     }
 
     /// 先持久化候选列表，成功后再同步列表及索引，保证写入失败不改变保护行为。
     private func persist(_ newRecords: [String]) -> Bool {
-        guard store.save(newRecords) else { return false }
+        guard store.save(newRecords) else {
+            storageError = "未能保存白名单，原列表保持不变。请稍后重试。"
+            return false
+        }
         syncRecords(newRecords)
+        storageError = nil
         return true
     }
 
@@ -76,7 +108,7 @@ final class BlackList: ObservableObject {
     /// 添加白名单应用；重复项视为成功，写入失败时保留原有列表。
     @discardableResult
     func append(data: String?) -> Bool {
-        guard let data, !data.isEmpty else { return false }
+        guard let data, !data.isEmpty, prepareMutation() else { return false }
         guard !recordSet.contains(data) else { return true }
         return persist(records + [data])
     }
@@ -84,7 +116,7 @@ final class BlackList: ObservableObject {
     /// 移除白名单应用；只有磁盘写入成功才更新命中索引。
     @discardableResult
     func remove(data: String?) -> Bool {
-        guard let data, !data.isEmpty else { return false }
+        guard let data, !data.isEmpty, prepareMutation() else { return false }
         guard recordSet.contains(data) else { return true }
         return persist(records.filter { $0 != data })
     }

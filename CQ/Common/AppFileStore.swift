@@ -30,14 +30,21 @@ final class AppFileStore {
         self.fileManager = fileManager
     }
 
-    func load<T: Decodable>(_ type: T.Type) -> T? {
+    /// 区分首次缺失和真正读取失败，避免调用方把损坏数据当成空记录覆盖。
+    func loadResult<T: Decodable>(_ type: T.Type) -> Result<T?, Error> {
         do {
             let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder().decode(type, from: data)
+            return .success(try JSONDecoder().decode(type, from: data))
         } catch {
-            handleLoadError(error)
-            return nil
+            if isMissingFile(error) { return .success(nil) }
+            AppLog.error("读取文件失败: \(error)")
+            return .failure(error)
         }
+    }
+
+    /// 为允许降级为空的调用方保留简便读取接口。
+    func load<T: Decodable>(_ type: T.Type) -> T? {
+        try? loadResult(type).get()
     }
 
     /// 原子保存数据并返回是否成功，让上层在失败时保留原有内存状态。
@@ -59,12 +66,6 @@ final class AppFileStore {
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-    }
-
-    private func handleLoadError(_ error: Error) {
-        // 首次启动时文件不存在属于正常情况，这里直接按空状态处理。
-        guard !isMissingFile(error) else { return }
-        AppLog.error("读取文件失败: \(error)")
     }
 
     private func isMissingFile(_ error: Error) -> Bool {

@@ -235,6 +235,7 @@ final class MenuPanelModel: ObservableObject {
         self.loginStatus = autoLaunchStatus()
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
+        self.whitelistError = blackList.storageError
         self.whitelistItems = blackList.records
         self.filteredWhitelistItems = blackList.records
         self.appPickerItems = []
@@ -339,7 +340,7 @@ final class MenuPanelModel: ObservableObject {
     func removeSelectedWhitelistItem() {
         guard let selectedWhitelistItem else { return }
         let saved = blackList.remove(data: selectedWhitelistItem)
-        whitelistError = saved ? nil : "未能保存白名单，原列表保持不变。请稍后重试。"
+        whitelistError = saved ? nil : blackList.storageError
     }
 
     func selectAppPickerItem(_ item: AppPickerItem?) {
@@ -392,6 +393,10 @@ private extension MenuPanelModel {
     }
 
     func bindWhitelist() {
+        blackList.$storageError
+            .receive(on: RunLoop.main)
+            .sink { [weak self] error in self?.whitelistError = error }
+            .store(in: &cancellables)
         blackList.$records
             .receive(on: RunLoop.main)
             .sink { [weak self] records in
@@ -415,7 +420,7 @@ private extension MenuPanelModel {
     func appendWhitelist(_ path: String?) -> Bool {
         guard let path else { return false }
         let saved = blackList.append(data: path)
-        whitelistError = saved ? nil : "未能保存白名单，原列表保持不变。请稍后重试。"
+        whitelistError = saved ? nil : blackList.storageError
         return saved
     }
 
@@ -432,7 +437,7 @@ private extension MenuPanelModel {
 
     /// 每次打开选择层时在后台刷新目录，避免新安装或卸载的应用被旧缓存掩盖。
     func presentAppPicker() {
-        whitelistError = nil
+        whitelistError = blackList.storageError
         isShowingAppPicker = true
         selectedAppPickerItem = nil
         appPickerSearchText = ""
