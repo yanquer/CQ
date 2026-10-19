@@ -419,11 +419,12 @@ private extension MenuPanelModel {
         return whitelistItems.filter { matchesAppSearch(path: $0, query: query) }
     }
 
+    /// 每次打开选择层时在后台刷新目录，避免新安装或卸载的应用被旧缓存掩盖。
     func presentAppPicker() {
         isShowingAppPicker = true
         selectedAppPickerItem = nil
         appPickerSearchText = ""
-        refreshAppPickerItemsIfNeeded()
+        refreshAppPickerItemsIfNeeded(refresh: true)
     }
 
     func syncSelectedWhitelistItem() {

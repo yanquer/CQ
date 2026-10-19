@@ -977,6 +977,26 @@ final class CQTests: XCTestCase {
         )
     }
 
+    /// 验证重新打开应用选择层时能看到安装与卸载后的最新目录内容。
+    func testAppPickerRefreshesAfterInstalledApplicationsChange() throws {
+        let directory = makeTempDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let appA = directory.appendingPathComponent("A.app")
+        let appB = directory.appendingPathComponent("B.app")
+        try createAppBundle(at: appA)
+        let catalog = InstalledAppCatalog(appDirectories: [directory.path])
+        let model = makeMenuPanelModel(records: [], appCatalog: catalog)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        XCTAssertEqual(model.appPickerItems.map(\.name), ["A"])
+        model.dismissAppPicker()
+        try FileManager.default.removeItem(at: appA)
+        try createAppBundle(at: appB)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        XCTAssertEqual(model.appPickerItems.map(\.name), ["B"])
+    }
+
     func testMenuPanelAppPickerLoadsCatalogItems() {
         let item = makeAppPickerItem("/Applications/Safari.app")
         let model = makeMenuPanelModel(
