@@ -7,6 +7,7 @@
 
 import XCTest
 import AppKit
+import Combine
 @testable import CQ
 
 final class CQTests: XCTestCase {
@@ -700,6 +701,59 @@ final class CQTests: XCTestCase {
 
         XCTAssertEqual(store.saveCallCount, 1)
         XCTAssertEqual(store.savedReports.count, 1)
+    }
+
+    /// 验证保护状态变更会传递到菜单，且异常状态不再显示已启用。
+    func testMenuPanelReflectsRuntimeStatusAndRechecks() {
+        let updates = PassthroughSubject<QuitGuardRuntimeStatus, Never>()
+        var recheckCount = 0
+        let model = MenuPanelModel(
+            config: makeConfig(), blackList: makeBlackList(),
+            isAutoLaunchEnabled: { false }, setAutoLaunch: { _ in },
+            runtimeStatus: .ready, runtimeUpdates: updates.eraseToAnyPublisher(),
+            recheckProtectionAction: { recheckCount += 1 }
+        )
+        XCTAssertTrue(model.summaryText.contains("保护已启用"))
+        updates.send(.tapCreateFailed)
+        waitForAsyncWork()
+        XCTAssertTrue(model.summaryText.contains("启动失败"))
+        XCTAssertFalse(model.summaryText.contains("保护已启用"))
+        model.recheckProtection()
+        XCTAssertEqual(recheckCount, 1)
+    }
+
+    /// 验证失败信息优先于未应用设置提示，避免编辑草稿掩盖保护失效。
+    func testMenuPanelKeepsFailureVisibleWithPendingSettings() {
+        let model = makeMenuPanelModel(records: [])
+        model.doubleTapIntervalDraft += 1
+        XCTAssertTrue(model.summaryText.contains("保护已暂停"))
+        XCTAssertTrue(model.summaryText.contains("未应用更改"))
+    }
+
+    /// 验证旧 tap 失败不会阻止手动重新创建，恢复成功后更新菜单运行态。
+    @MainActor
+    func testManualRecheckRetriesAfterTapFailure() {
+        let availability = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let runtimeStore = QuitGuardRuntimeStore(status: .tapCreateFailed)
+        let tapSpy = TapControllerSpy()
+        let delegate = makeAppDelegate(
+            permissionService: PermissionServiceSpy(currentAvailability: availability),
+            runtimeStore: runtimeStore, tapSpy: tapSpy,
+            diagnosticService: DiagnosticServiceSpy { _, _ in
+                self.makeDiagnosticSnapshot(suspectedFailureReason: .tapCreateReturnedNil)
+            }
+        )
+        delegate.recheckQuitGuard()
+        XCTAssertEqual(tapSpy.refreshCallCount, 1)
+        XCTAssertEqual(runtimeStore.status, .ready)
+    }
+
+    /// 验证可重试的 tap 故障不会被误当成不可恢复的环境限制。
+    func testDiagnosticAllowsRetryForTransientTapFailures() {
+        for reason: SuspectedFailureReason in [.tapCreateReturnedNil, .tapDisabledBySystem] {
+            XCTAssertTrue(makeDiagnosticSnapshot(suspectedFailureReason: reason).canActivateTap)
+        }
+        XCTAssertFalse(makeDiagnosticSnapshot(suspectedFailureReason: .invalidCodeSignature).canActivateTap)
     }
 
     func testMenuPanelDraftsOnlyWriteAfterApply() {

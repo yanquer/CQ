@@ -121,9 +121,11 @@ private extension MenuPopoverController {
 }
 
 extension AppDelegate {
+    /// 创建菜单栏入口，并让面板展示实际保护状态及恢复操作。
+    @MainActor
     func makeMenuButton() {
         menuPopoverController.configure(
-            contentViewController: NSHostingController(rootView: MenuShowView()),
+            contentViewController: NSHostingController(rootView: MenuShowView(model: makeMenuPanelModel())),
             size: NSSize(
                 width: MenuPanelStyle.popoverWidth,
                 height: MenuPanelStyle.popoverHeight

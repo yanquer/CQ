@@ -168,6 +168,7 @@ final class MenuPanelModel: ObservableObject {
             dismissAppPicker()
         }
     }
+    @Published private(set) var runtimeStatus: QuitGuardRuntimeStatus
     @Published var startAtLogin: Bool
     @Published var doubleTapIntervalDraft: Double
     @Published var alertCloseTimeDraft: Double
@@ -197,8 +198,10 @@ final class MenuPanelModel: ObservableObject {
     private let appCatalogQueue: DispatchQueue
     private let setAutoLaunch: (Bool) -> Void
     private let quitAction: () -> Void
+    private let recheckProtectionAction: () -> Void
     private var cancellables: Set<AnyCancellable> = []
 
+    /// 初始化面板配置、运行状态订阅及用户操作回调。
     init(
         config: QuitGuardConfig = .shared,
         blackList: BlackList = .this,
@@ -212,7 +215,10 @@ final class MenuPanelModel: ObservableObject {
         setAutoLaunch: @escaping (Bool) -> Void = {
             $0 ? AutoLaunch.enableAutoLaunch() : AutoLaunch.disableAutoLaunch()
         },
-        quitAction: @escaping () -> Void = { NSApplication.shared.terminate(nil) }
+        quitAction: @escaping () -> Void = { NSApplication.shared.terminate(nil) },
+        runtimeStatus: QuitGuardRuntimeStatus = .tapDisabled,
+        runtimeUpdates: AnyPublisher<QuitGuardRuntimeStatus, Never>? = nil,
+        recheckProtectionAction: @escaping () -> Void = {}
     ) {
         self.config = config
         self.blackList = blackList
@@ -221,6 +227,8 @@ final class MenuPanelModel: ObservableObject {
         self.appCatalogQueue = appCatalogQueue
         self.setAutoLaunch = setAutoLaunch
         self.quitAction = quitAction
+        self.runtimeStatus = runtimeStatus
+        self.recheckProtectionAction = recheckProtectionAction
         self.startAtLogin = isAutoLaunchEnabled()
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
@@ -229,6 +237,10 @@ final class MenuPanelModel: ObservableObject {
         self.appPickerItems = []
         self.filteredAppPickerItems = []
         bindWhitelist()
+        runtimeUpdates?
+            .receive(on: RunLoop.main)
+            .sink { [weak self] status in self?.runtimeStatus = status }
+            .store(in: &cancellables)
     }
 
     var hasPendingChanges: Bool {
@@ -238,7 +250,8 @@ final class MenuPanelModel: ObservableObject {
 
     var summaryText: String {
         let suffix = whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
-        return hasPendingChanges ? "有未应用更改 · \(suffix)" : "双击 Cmd+Q 才会退出 · \(suffix)"
+        let pending = hasPendingChanges ? " · 有未应用更改" : ""
+        return "\(runtimeStatus.summaryText) · \(suffix)\(pending)"
     }
 
     var whitelistSubtitleText: String {
@@ -263,6 +276,11 @@ final class MenuPanelModel: ObservableObject {
 
     var canConfirmAppPickerSelection: Bool {
         selectedAppPickerItem != nil && !isLoadingAppPicker
+    }
+
+    /// 重新读取权限并尝试恢复退出保护。
+    func recheckProtection() {
+        recheckProtectionAction()
     }
 
     func toggleLaunchAtLogin(_ isEnabled: Bool) {
@@ -484,7 +502,8 @@ private extension MenuPanelScreen {
         VStack(alignment: .leading, spacing: MenuPanelStyle.sectionSpacing) {
             MenuPanelHeader(
                 title: "CQ",
-                subtitle: model.summaryText
+                subtitle: model.summaryText,
+                recheckAction: model.recheckProtection
             )
             MenuPanelSegmentedControl(selectedTab: $model.selectedTab)
             MenuPanelContentViewport {
@@ -522,6 +541,7 @@ struct MenuPanelContentViewport<Content: View>: View {
 struct MenuPanelHeader: View {
     let title: String
     let subtitle: String
+    let recheckAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: MenuPanelStyle.headerSpacing) {
@@ -531,6 +551,10 @@ struct MenuPanelHeader: View {
                     .font(MenuPanelStyle.headerTitleFont)
                     .foregroundStyle(MenuPanelStyle.textPrimary)
                     .layoutPriority(1)
+                Spacer()
+                Button("重新检查", action: recheckAction)
+                    .buttonStyle(.bordered)
+                    .help("检查权限并恢复退出保护")
             }
             Text(subtitle)
                 .font(MenuPanelStyle.headerSubtitleFont)

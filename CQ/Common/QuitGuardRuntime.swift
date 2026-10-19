@@ -106,6 +106,24 @@ extension QuitGuardAvailability {
 }
 
 extension QuitGuardRuntimeStatus {
+    /// 返回面向用户的真实保护状态，避免失效时仍声称正在保护。
+    var summaryText: String {
+        switch self {
+        case .ready:
+            return "保护已启用 · 短按两次 Cmd+Q 确认退出"
+        case .missingPermissions(let permissions):
+            return "保护未启用 · 缺少" + permissions.map(\.title).joined(separator: "、")
+        case .tapCreateFailed:
+            return "保护未启用 · 启动失败，请重新检查"
+        case .tapDisabled:
+            return "保护已暂停 · 请重新检查"
+        case .blockedByEnvironment(let reason):
+            return reason == .invalidCodeSignature
+                ? "保护未启用 · 应用签名异常，请重新安装"
+                : "保护未启用 · 运行环境异常，请重新检查"
+        }
+    }
+
     /// 生成适合日志输出的运行状态文本。
     var logDescription: String {
         switch self {

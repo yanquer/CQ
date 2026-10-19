@@ -50,6 +50,7 @@ enum EventTapOptionName: String, Codable, Equatable {
 enum QuitGuardTelemetryEvent: String, Codable, Equatable {
     case launchSync = "launch_sync"
     case wakeSync = "wake_sync"
+    case manualSync = "manual_sync"
     case permissionRefresh = "permission_refresh"
     case tapCreateAttempt = "tap_create_attempt"
     case tapCreateResult = "tap_create_result"
@@ -110,7 +111,12 @@ struct QuitGuardDiagnosticSnapshot: Codable, Equatable {
 
     /// 返回当前诊断结果是否允许继续启动全局拦截。
     var canActivateTap: Bool {
-        suspectedFailureReason == .none
+        switch suspectedFailureReason {
+        case .none, .tapCreateReturnedNil, .tapDisabledBySystem:
+            return true
+        default:
+            return false
+        }
     }
 }
 

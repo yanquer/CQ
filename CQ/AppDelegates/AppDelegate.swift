@@ -148,6 +148,24 @@ extension AppDelegate {
         syncAuthorizationWindow(with: availability, showWhenMissing: false)
     }
 
+    /// 手动重新检查权限并恢复保护，失败时继续展示真实状态。
+    @MainActor
+    func recheckQuitGuard() {
+        let availability = readAvailability(promptAccessibility: false)
+        syncQuitGuardStatus(with: availability, refreshTap: true, event: .manualSync)
+        syncAuthorizationWindow(with: availability, showWhenMissing: true)
+    }
+
+    /// 将实际运行状态与恢复操作绑定到菜单面板。
+    @MainActor
+    func makeMenuPanelModel() -> MenuPanelModel {
+        MenuPanelModel(
+            runtimeStatus: runtimeStore.status,
+            runtimeUpdates: runtimeStore.$status.eraseToAnyPublisher(),
+            recheckProtectionAction: { [weak self] in self?.recheckQuitGuard() }
+        )
+    }
+
     /// 读取当前退出保护所依赖的权限快照。
     /// - Parameter promptAccessibility: 是否触发辅助功能权限提示。
     /// - Returns: 最新权限快照。
@@ -162,8 +180,12 @@ extension AppDelegate {
     ///   - availability: 最新权限快照。
     ///   - refreshTap: 是否按唤醒后的重建流程恢复 tap。
     @MainActor
-    func syncQuitGuardStatus(with availability: QuitGuardAvailability, refreshTap: Bool) {
-        let event: QuitGuardTelemetryEvent = refreshTap ? .wakeSync : .launchSync
+    func syncQuitGuardStatus(
+        with availability: QuitGuardAvailability,
+        refreshTap: Bool,
+        event: QuitGuardTelemetryEvent? = nil
+    ) {
+        let event = event ?? (refreshTap ? QuitGuardTelemetryEvent.wakeSync : .launchSync)
         let diagnosticSnapshot = makeDiagnosticSnapshot(availability: availability)
         telemetry.record(event: .environmentDiagnosed, snapshot: diagnosticSnapshot)
 

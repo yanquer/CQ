@@ -18,7 +18,8 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 1. 启动应用后，图标会常驻在菜单栏。
 2. 点击菜单栏图标，打开设置面板。
 3. 根据需要调整退出确认时间、提示停留时间或白名单应用。
-4. 一般保持默认设置即可。
+4. 菜单顶部显示实际保护状态；出现权限或拦截异常时，点击“重新检查”尝试恢复。
+5. 一般保持默认设置即可。
 
 ## mac mini / 多设备排查
 
@@ -50,7 +51,7 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 - 本地跑单测时建议关闭签名校验，避免被已撤销证书影响：
   `xcodebuild test -project CQ.xcodeproj -scheme CQ -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' -only-testing:CQTests`
 - 如果要定位退出保护问题，优先查看统一日志和上面的诊断文件，两边会输出同一套事件名：
-  `launch_sync`、`wake_sync`、`permission_refresh`、`tap_create_attempt`、`tap_create_result`、`tap_disabled`、`tap_recovery_result`、`environment_diagnosed`
+  `launch_sync`、`wake_sync`、`manual_sync`、`permission_refresh`、`tap_create_attempt`、`tap_create_result`、`tap_disabled`、`tap_recovery_result`、`environment_diagnosed`
 
 ## 界面预览
 
