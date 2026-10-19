@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         AppBlack.this.startObservingWorkspace { [weak self] in
-            self?.eventHandler.resetRuntimeState()
+            self?.eventTapController.resetConfirmation()
         }
         registerWorkspaceNotifications()
         configureQuitGuardAtLaunch()

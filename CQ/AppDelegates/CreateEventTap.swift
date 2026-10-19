@@ -36,6 +36,7 @@ final class EventTapController: QuitGuardControlling {
     private let statusHandler: (QuitGuardRuntimeStatus) -> Void
     private let tapCreator: EventTapCreator
     private let tapEnabledChecker: (CFMachPort) -> Bool
+    private let tipPresenter: ((QuitPrompt, TimeInterval) -> Void)?
     private let strategies: [EventTapStrategy]
     private let tipAnimationDuration: TimeInterval = 0.18
 
@@ -43,6 +44,7 @@ final class EventTapController: QuitGuardControlling {
     private var runLoopSource: CFRunLoopSource?
     private var recoveryWorkItem: DispatchWorkItem?
     private var lifecycleID = UUID()
+    private var tipRequestID = UUID()
     private var tipWindow: TipPanel?
     private var tipModel: TipOverlayModel?
     private var tipCloseWorkItem: DispatchWorkItem?
@@ -56,7 +58,8 @@ final class EventTapController: QuitGuardControlling {
         statusHandler: @escaping (QuitGuardRuntimeStatus) -> Void = { _ in },
         strategies: [EventTapStrategy] = EventTapStrategy.defaultStrategies,
         tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator,
-        tapEnabledChecker: @escaping (CFMachPort) -> Bool = CGEvent.tapIsEnabled
+        tapEnabledChecker: @escaping (CFMachPort) -> Bool = CGEvent.tapIsEnabled,
+        tipPresenter: ((QuitPrompt, TimeInterval) -> Void)? = nil
     ) {
         self.config = config
         self.handler = handler
@@ -64,6 +67,22 @@ final class EventTapController: QuitGuardControlling {
         self.strategies = strategies
         self.tapCreator = tapCreator
         self.tapEnabledChecker = tapEnabledChecker
+        self.tipPresenter = tipPresenter
+    }
+
+    /// 释放时同步移除端口和回调，再清理主线程窗口，避免悬空 userInfo 和遗留资源。
+    deinit {
+        recoveryWorkItem?.cancel()
+        tipCloseWorkItem?.cancel()
+        tipDismissWorkItem?.cancel()
+        removeTap()
+        if let window = tipWindow { DispatchQueue.main.async { window.close() } }
+    }
+
+    /// 切换应用时同时重置按压状态与提示，旧应用的提示不能继续显示。
+    func resetConfirmation() {
+        handler.resetRuntimeState()
+        closeTipWindow()
     }
 
     /// 启动事件拦截，并返回当前是否已经成功建立 tap。
@@ -142,7 +161,8 @@ final class EventTapController: QuitGuardControlling {
         return true
     }
 
-    private func handle(event: CGEvent, eventType: CGEventType) -> Unmanaged<CGEvent>? {
+    /// 处理单个事件；测试直接传入事件对象，不向其他应用发送键盘输入。
+    func handle(event: CGEvent, eventType: CGEventType) -> Unmanaged<CGEvent>? {
         if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
             handleTapDisabled(eventType)
             return .passUnretained(event)
@@ -169,21 +189,38 @@ final class EventTapController: QuitGuardControlling {
         }
     }
 
+    /// 排队显示提示前记录请求和生命周期，重置或停止后丢弃旧请求。
     private func presentTip(_ prompt: QuitPrompt, duration: TimeInterval) {
+        let requestID = UUID()
+        tipRequestID = requestID
+        let expectedLifecycle = lifecycleID
         DispatchQueue.main.async { [weak self] in
-            self?.presentTipOnMainThread(prompt, duration: duration)
+            guard let self, self.lifecycleID == expectedLifecycle, self.tipRequestID == requestID else { return }
+            if let tipPresenter = self.tipPresenter {
+                tipPresenter(prompt, duration)
+            } else {
+                self.presentTipOnMainThread(prompt, duration: duration)
+            }
         }
     }
 
+    /// 关闭提示时使尚未显示的旧请求失效，新提示不受旧关闭回调影响。
     private func closeTipWindow() {
+        let requestID = UUID()
+        tipRequestID = requestID
         DispatchQueue.main.async { [weak self] in
-            self?.dismissTipWindow(releaseResources: false)
+            guard let self, self.tipRequestID == requestID else { return }
+            self.dismissTipWindow(releaseResources: false)
         }
     }
 
+    /// 停止拦截后释放当前生命周期的提示窗口，不影响后来启动的生命周期。
     private func destroyTipWindow() {
+        tipRequestID = UUID()
+        let expectedLifecycle = lifecycleID
         DispatchQueue.main.async { [weak self] in
-            self?.dismissTipWindow(releaseResources: true)
+            guard let self, self.lifecycleID == expectedLifecycle else { return }
+            self.dismissTipWindow(releaseResources: true)
         }
     }
 

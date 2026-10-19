@@ -156,6 +156,9 @@ protocol QuitGuardPermissionChecking {
 protocol QuitGuardControlling: AnyObject {
     var currentTapSnapshot: TapSnapshot { get }
 
+    /// 清除当前应用的退出确认与提示。
+    func resetConfirmation()
+
     /// 启动全局事件拦截，并返回是否创建成功。
     /// - Returns: 事件拦截是否成功启动。
     func start() -> Bool

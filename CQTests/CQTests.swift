@@ -728,6 +728,47 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(tapSpy.stopCallCount, 1)
     }
 
+    /// 验证控制器释放时底层端口同步失效，不再留下指向已释放对象的回调。
+    func testEventTapPortIsInvalidatedWhenControllerDeinitializes() {
+        let port = makeTestMachPort()
+        var controller: EventTapController? = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in port }, tapEnabledChecker: { _ in true }
+        )
+        XCTAssertTrue(controller!.start())
+        controller = nil
+        XCTAssertFalse(CFMachPortIsValid(port))
+        CFMachPortInvalidate(port)
+    }
+
+    /// 验证提示在入场回调执行前被关闭时，不会被旧动画回调重新显示。
+    func testDismissedTipIsNotResurrectedByQueuedAnimation() {
+        let model = TipOverlayModel(presentation: TipPresentation(prompt: .confirmExit(window: 3), duration: 3))
+        model.present(prompt: .confirmExit(window: 3), duration: 3, animateIn: true)
+        model.dismiss()
+        waitForAsyncWork()
+        XCTAssertFalse(model.isVisible)
+    }
+
+    /// 验证应用切换及停止都会撤销排队中的提示，不显示已经失效的确认。
+    func testQueuedTipIsCancelledByResetAndStop() {
+        var presentationCount = 0
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
+            tapEnabledChecker: { _ in true }, tipPresenter: { _, _ in presentationCount += 1 }
+        )
+        XCTAssertTrue(controller.start())
+        _ = controller.handle(event: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        controller.resetConfirmation()
+        waitForAsyncWork()
+        XCTAssertEqual(presentationCount, 0)
+        _ = controller.handle(event: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        controller.stop()
+        waitForAsyncWork()
+        XCTAssertEqual(presentationCount, 0)
+    }
+
     /// 验证 tap 创建失败时会立即回传失败状态。
     func testEventTapControllerStartReportsTapCreateFailure() {
         var statuses: [QuitGuardRuntimeStatus] = []
@@ -1747,6 +1788,9 @@ private final class TapControllerSpy: QuitGuardControlling {
         startCallCount += 1
         return startResult
     }
+
+    /// 测试桩无需显示提示，重置调用保持无副作用。
+    func resetConfirmation() {}
 
     /// 记录停止调用次数。
     func stop() {

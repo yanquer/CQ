@@ -17,16 +17,20 @@ struct TipPresentation: Equatable, Identifiable {
 final class TipOverlayModel: ObservableObject {
     @Published private(set) var presentation: TipPresentation
     @Published private(set) var isVisible = false
+    private var visibilityID = UUID()
 
     init(presentation: TipPresentation) {
         self.presentation = presentation
     }
 
+    /// 显示新提示并隔离异步入场动画，关闭后的旧动画不能重新显示提示。
     func present(
         prompt: QuitPrompt,
         duration: TimeInterval,
         animateIn: Bool
     ) {
+        visibilityID = UUID()
+        let expectedVisibilityID = visibilityID
         presentation = TipPresentation(prompt: prompt, duration: duration)
         guard animateIn else {
             isVisible = true
@@ -35,11 +39,14 @@ final class TipOverlayModel: ObservableObject {
 
         isVisible = false
         DispatchQueue.main.async { [weak self] in
-            self?.isVisible = true
+            guard let self, self.visibilityID == expectedVisibilityID else { return }
+            self.isVisible = true
         }
     }
 
+    /// 隐藏提示并使尚未执行的入场动画失效。
     func dismiss() {
+        visibilityID = UUID()
         isVisible = false
     }
 }
