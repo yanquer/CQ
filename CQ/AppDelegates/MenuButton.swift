@@ -138,7 +138,10 @@ extension AppDelegate {
         configureMenuButton()
     }
 
+    /// 打开菜单前同步权限，避免展示已失效的授权状态。
+    @MainActor
     @objc func MenuButtonToggle(sender: AnyObject) {
+        refreshPermissionsIfNeeded()
         menuPopoverController.toggle(sender: sender)
     }
 }

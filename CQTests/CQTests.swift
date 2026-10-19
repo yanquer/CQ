@@ -549,6 +549,46 @@ final class CQTests: XCTestCase {
         XCTAssertFalse(availability.canStartIntercepting)
     }
 
+    /// 验证早先排队的 ready 回调不会覆盖后来确认的缺权限状态。
+    @MainActor
+    func testQueuedReadyDoesNotOverrideNewerMissingPermission() {
+        let available = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let missing = QuitGuardAvailability(isAccessibilityTrusted: false, hasListenEventAccess: true)
+        let store = QuitGuardRuntimeStore(status: .ready)
+        let tap = TapControllerSpy(currentTapSnapshot: TapSnapshot(
+            currentLocation: .session, currentOption: .defaultTap, isEnabled: true, lastFailureReason: nil, attempts: []
+        ))
+        var callback: ((QuitGuardRuntimeStatus) -> Void)?
+        let delegate = AppDelegate(
+            config: makeConfig(), state: QuitGuardState(),
+            permissionService: PermissionServiceSpy(currentAvailability: available),
+            diagnosticService: makeDiagnosticService(), telemetry: TelemetrySpy(), runtimeStore: store,
+            eventTapControllerFactory: { _, _, status in callback = status; return tap }
+        )
+        delegate.syncQuitGuardStatus(with: available, refreshTap: false)
+        callback?(.ready)
+        delegate.syncQuitGuardStatus(with: missing, refreshTap: false)
+        waitForAsyncWork()
+        XCTAssertEqual(store.status, .missingPermissions([.accessibility]))
+    }
+
+    /// 验证系统停用回调使用最新权限，而不是上次启动时缓存的授权状态。
+    @MainActor
+    func testTapDisableRechecksRevokedPermission() {
+        let service = PermissionServiceSpy(currentAvailability: QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true))
+        let store = QuitGuardRuntimeStore(status: .ready)
+        let tap = TapControllerSpy(currentTapSnapshot: TapSnapshot(
+            currentLocation: .session, currentOption: .defaultTap, isEnabled: false,
+            lastFailureReason: .tapDisabledBySystem, attempts: []
+        ))
+        let delegate = makeAppDelegate(permissionService: service, runtimeStore: store, tapSpy: tap)
+        _ = delegate.readAvailability(promptAccessibility: false)
+        service.currentValue = QuitGuardAvailability(isAccessibilityTrusted: false, hasListenEventAccess: true)
+        delegate.syncRuntimeStatus(.tapDisabled)
+        XCTAssertEqual(store.status, .missingPermissions([.accessibility]))
+        XCTAssertEqual(tap.stopCallCount, 1)
+    }
+
     /// 验证启动编排在权限不足时不会启动 tap。
     @MainActor
     func testAppDelegateLaunchMarksMissingPermissionsWithoutStartingTap() {
@@ -1122,6 +1162,117 @@ final class CQTests: XCTestCase {
             )
         )
         delegate.syncQuitGuardStatus(with: availability, refreshTap: true)
+        XCTAssertEqual(tap.refreshCallCount, 1)
+    }
+
+    /// 验证旧创建失败通知不能覆盖当前系统停用状态。
+    @MainActor
+    func testStaleCreateFailureDoesNotOverrideCurrentDisabledState() {
+        let store = QuitGuardRuntimeStore(status: .tapDisabled)
+        let tap = TapControllerSpy(currentTapSnapshot: TapSnapshot(
+            currentLocation: .session, currentOption: .defaultTap, isEnabled: false,
+            lastFailureReason: .tapDisabledBySystem, attempts: []
+        ))
+        let delegate = makeAppDelegate(
+            permissionService: PermissionServiceSpy(currentAvailability: QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)),
+            runtimeStore: store, tapSpy: tap
+        )
+        delegate.syncRuntimeStatus(.tapCreateFailed)
+        XCTAssertEqual(store.status, .tapDisabled)
+    }
+
+    /// 验证权限撤销后停止、重新授权后恢复，未变化时不重复重建。
+    @MainActor
+    func testPermissionRefreshStopsAndRecoversWithoutRepeatedRebuilds() {
+        let available = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let service = PermissionServiceSpy(currentAvailability: available)
+        let store = QuitGuardRuntimeStore(status: .ready)
+        let tap = TapControllerSpy()
+        let delegate = makeAppDelegate(permissionService: service, runtimeStore: store, tapSpy: tap)
+        _ = delegate.readAvailability(promptAccessibility: false)
+        delegate.syncQuitGuardStatus(with: available, refreshTap: false)
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(tap.refreshCallCount, 0)
+        service.currentValue = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: false)
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(store.status, .missingPermissions([.listenEvent]))
+        XCTAssertEqual(tap.stopCallCount, 1)
+        service.currentValue = available
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(store.status, .ready)
+        XCTAssertEqual(tap.refreshCallCount, 1)
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(tap.refreshCallCount, 1)
+    }
+
+    /// 验证没有收到停用通知时，健康检查仍能发现实际 tap 失效且不会虚报恢复成功。
+    @MainActor
+    func testHealthCheckDetectsDisabledTapWithoutPermissionChange() {
+        let available = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let store = QuitGuardRuntimeStore(status: .ready)
+        let tap = TapControllerSpy()
+        let delegate = makeAppDelegate(
+            permissionService: PermissionServiceSpy(currentAvailability: available), runtimeStore: store, tapSpy: tap
+        )
+        _ = delegate.readAvailability(promptAccessibility: false)
+        delegate.syncQuitGuardStatus(with: available, refreshTap: false)
+        tap.actualEnabledOverride = false
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(tap.refreshCallCount, 1)
+        XCTAssertEqual(store.status, .tapCreateFailed)
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(tap.refreshCallCount, 1)
+    }
+
+    /// 验证停用通知处理期间被授权编排停止时，不会继续安排自动恢复。
+    func testTapRecoveryIsAbortedWhenStatusHandlerStopsController() {
+        var controller: EventTapController?
+        var creationCount = 0
+        controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            statusHandler: { status in if status == .tapDisabled { controller?.stop() } },
+            tapCreator: { _, _, _, _, _, _ in creationCount += 1; return self.makeTestMachPort() },
+            tapEnabledChecker: { _ in true }
+        )
+        defer { controller?.stop(); controller = nil }
+        XCTAssertTrue(controller!.start())
+        controller?.handleTapDisabled(.tapDisabledByTimeout)
+        waitForAsyncWork()
+        XCTAssertEqual(creationCount, 1)
+        XCTAssertFalse(controller!.isCurrentlyEnabled)
+    }
+
+    /// 验证休眠期间忽略旧 ready 和权限轮询，唤醒时再读取权限恢复。
+    @MainActor
+    func testSleepRejectsCallbacksUntilWake() {
+        let available = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let service = PermissionServiceSpy(currentAvailability: available)
+        let store = QuitGuardRuntimeStore(status: .ready)
+        let tap = TapControllerSpy()
+        let delegate = makeAppDelegate(permissionService: service, runtimeStore: store, tapSpy: tap)
+        delegate.handleWillSleep()
+        delegate.syncRuntimeStatus(.ready)
+        delegate.refreshPermissionsIfNeeded()
+        XCTAssertEqual(store.status, .tapDisabled)
+        XCTAssertTrue(service.promptAccessibilityValues.isEmpty)
+        delegate.handleDidWake()
+        XCTAssertEqual(store.status, .ready)
+        XCTAssertEqual(tap.refreshCallCount, 1)
+    }
+
+    /// 验证请求监听权限成功后实际恢复保护，不只更新授权窗口文案。
+    @MainActor
+    func testListenPermissionRequestStartsProtectionWhenGranted() {
+        let available = QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)
+        let service = PermissionServiceSpy(
+            currentAvailability: QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: false),
+            requestedAvailability: available
+        )
+        let store = QuitGuardRuntimeStore(status: .missingPermissions([.listenEvent]))
+        let tap = TapControllerSpy()
+        let delegate = makeAppDelegate(permissionService: service, runtimeStore: store, tapSpy: tap)
+        delegate.handleListenEventAccessRequest()
+        XCTAssertEqual(store.status, .ready)
         XCTAssertEqual(tap.refreshCallCount, 1)
     }
 
@@ -1756,7 +1907,7 @@ private struct SystemAppPickerSpy: SystemAppPicking {
 }
 
 private final class PermissionServiceSpy: QuitGuardPermissionChecking {
-    private let currentValue: QuitGuardAvailability
+    var currentValue: QuitGuardAvailability
     private let requestedValue: QuitGuardAvailability
     private(set) var promptAccessibilityValues: [Bool] = []
 
@@ -1784,6 +1935,8 @@ private final class PermissionServiceSpy: QuitGuardPermissionChecking {
 }
 
 private final class TapControllerSpy: QuitGuardControlling {
+    var actualEnabledOverride: Bool?
+    var isCurrentlyEnabled: Bool { actualEnabledOverride ?? currentTapSnapshot.isEnabled }
     private let startResult: Bool
     private let refreshResult: Bool
     private(set) var startCallCount: Int = 0
@@ -1805,6 +1958,7 @@ private final class TapControllerSpy: QuitGuardControlling {
     /// - Returns: 预设的启动结果。
     func start() -> Bool {
         startCallCount += 1
+        updateSnapshot(enabled: startResult)
         return startResult
     }
 
@@ -1814,14 +1968,24 @@ private final class TapControllerSpy: QuitGuardControlling {
     /// 记录停止调用次数。
     func stop() {
         stopCallCount += 1
+        currentTapSnapshot = .idle
     }
 
     /// 记录恢复调用次数，并返回预设结果。
     /// - Returns: 预设的恢复结果。
     func refresh() -> Bool {
         refreshCallCount += 1
+        updateSnapshot(enabled: refreshResult)
         return refreshResult
     }
+    /// 与真实控制器一致地更新快照，让编排测试不依赖不可能的成功但未启用状态。
+    private func updateSnapshot(enabled: Bool) {
+        currentTapSnapshot = TapSnapshot(
+            currentLocation: .session, currentOption: .defaultTap, isEnabled: enabled,
+            lastFailureReason: enabled ? nil : .tapCreateReturnedNil, attempts: []
+        )
+    }
+
 }
 
 private final class DiagnosticServiceSpy: QuitGuardDiagnosing {

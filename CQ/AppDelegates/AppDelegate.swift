@@ -30,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var runtimeStoreStorage: QuitGuardRuntimeStore?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var lastAvailability: QuitGuardAvailability?
+    private var permissionTimer: Timer?
+    private var isSleeping = false
+    private var isTerminating = false
 
     override init() {
         self.config = .shared
@@ -61,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    /// 释放代理时清理定时器，回调不再留在主循环中空转。
+    deinit {
+        permissionTimer?.invalidate()
+    }
+
     private static let defaultEventTapControllerFactory: EventTapControllerFactory = {
         config,
         handler,
@@ -83,9 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private lazy var eventTapController: QuitGuardControlling = {
         let statusHandler: (QuitGuardRuntimeStatus) -> Void = { [weak self] status in
-            Task { @MainActor [weak self] in
-                self?.syncRuntimeStatus(status)
-            }
+            // event tap 绑定主运行循环，立即处理状态以免排队回调覆盖后来的停止或权限变化。
+            MainActor.assumeIsolated { self?.syncRuntimeStatus(status) }
         }
         return eventTapControllerFactory(config, eventHandler, statusHandler)
     }()
@@ -102,11 +109,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerWorkspaceNotifications()
         configureQuitGuardAtLaunch()
         makeMenuButton()
+        startPermissionMonitoring()
     }
 
     @MainActor
     func applicationWillTerminate(_ notification: Notification) {
         guard !isRunningTests else { return }
+        isTerminating = true
+        permissionTimer?.invalidate()
+        permissionTimer = nil
         removeWorkspaceNotifications()
         AppBlack.this.stopObservingWorkspace()
         eventTapController.stop()
@@ -211,7 +222,8 @@ extension AppDelegate {
             return
         }
 
-        let didActivate = refreshTap ? eventTapController.refresh() : eventTapController.start()
+        let didStart = refreshTap ? eventTapController.refresh() : eventTapController.start()
+        let didActivate = didStart && eventTapController.isCurrentlyEnabled
         let resultSnapshot = makeDiagnosticSnapshot(availability: availability)
         if !resultSnapshot.tapSnapshot.attempts.isEmpty {
             telemetry.record(event: .tapCreateAttempt, snapshot: resultSnapshot)
@@ -228,18 +240,64 @@ extension AppDelegate {
         )
     }
 
-    /// 把 event tap 生命周期变化写回运行状态。
-    /// - Parameter status: 事件 tap 最新运行状态。
+    /// 同步主循环回调，并用当前 tap 和权限快照拒绝过期状态。
     @MainActor
     func syncRuntimeStatus(_ status: QuitGuardRuntimeStatus) {
-        AppLog.info("退出保护运行状态更新: \(status.logDescription)")
+        guard !isSleeping, !isTerminating, matchesCurrentTap(status) else { return }
         let previousStatus = runtimeStore.status
-        runtimeStore.update(status: status)
-        guard status == .tapDisabled || previousStatus == .tapDisabled else { return }
-        let availability = currentAvailabilityForDiagnostics()
+        let availability = readAvailability(promptAccessibility: false)
         let snapshot = makeDiagnosticSnapshot(availability: availability)
+        if !availability.canStartIntercepting || !snapshot.canActivateTap {
+            eventTapController.stop()
+            applyBlockedRuntimeStatus(availability: availability, snapshot: snapshot)
+        } else {
+            runtimeStore.update(status: status)
+        }
+        AppLog.info("退出保护运行状态更新: \(runtimeStore.status.logDescription)")
+        guard status == .tapDisabled || previousStatus == .tapDisabled else { return }
         let event: QuitGuardTelemetryEvent = status == .tapDisabled ? .tapDisabled : .tapRecoveryResult
         telemetry.record(event: event, snapshot: snapshot)
+    }
+
+    /// 用控制器当前状态过滤停止或重建之前的回调。
+    @MainActor
+    private func matchesCurrentTap(_ status: QuitGuardRuntimeStatus) -> Bool {
+        let tap = eventTapController.currentTapSnapshot
+        switch status {
+        case .ready: return tap.isEnabled && eventTapController.isCurrentlyEnabled
+        case .tapDisabled: return tap.lastFailureReason == .tapDisabledBySystem
+        case .tapCreateFailed:
+            return !tap.isEnabled && (tap.lastFailureReason == .tapCreateReturnedNil || tap.lastFailureReason == .tapEnableFailed)
+        default: return true
+        }
+    }
+
+    /// 仅在权限实际变化时重编排保护，避免无变化时反复验签、写盘或重建 tap。
+    @MainActor
+    func refreshPermissionsIfNeeded() {
+        guard !isSleeping, !isTerminating else { return }
+        let availability = permissionService.currentAvailability(promptAccessibility: false)
+        let needsRecovery = runtimeStore.status == .ready && !eventTapController.isCurrentlyEnabled
+        guard availability != lastAvailability || needsRecovery else { return }
+        lastAvailability = availability
+        syncQuitGuardStatus(
+            with: availability, refreshTap: true,
+            event: needsRecovery ? .tapRecoveryResult : .permissionRefresh
+        )
+        syncAuthorizationWindow(with: availability, showWhenMissing: false)
+    }
+
+    /// macOS 没有面向该服务的授权变更订阅，用低频无弹窗检查捕获后台授权变化。
+    @MainActor
+    private func startPermissionMonitoring() {
+        permissionTimer?.invalidate()
+        let refresh: @MainActor @Sendable () -> Void = { [weak self] in self?.refreshPermissionsIfNeeded() }
+        let timer = Timer(timeInterval: 5, repeats: true) { _ in
+            MainActor.assumeIsolated { refresh() }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        permissionTimer = timer
     }
 
     /// 按当前权限结果决定是否展示动态授权窗口。
@@ -257,7 +315,7 @@ extension AppDelegate {
             return
         }
         guard showWhenMissing else {
-            AppLog.info("当前不主动展示授权窗口: \(availability.logDescription)")
+            noAccessWindow?.contentViewController = NSHostingController(rootView: makeNoAccessView(for: availability))
             return
         }
         showAuthorizationWindow(for: availability)
@@ -267,6 +325,7 @@ extension AppDelegate {
     /// - Parameter availability: 当前用于渲染授权窗口的权限快照。
     @MainActor
     func showAuthorizationWindow(for availability: QuitGuardAvailability) {
+        guard !isRunningTests else { return }
         AppLog.info("展示授权窗口: \(availability.logDescription)")
         let rootView = makeNoAccessView(for: availability)
         if let noAccessWindow {
@@ -294,13 +353,8 @@ extension AppDelegate {
         AppLog.info("用户点击请求事件监听权限")
         let availability = permissionService.requestListenEventAccess()
         lastAvailability = availability
-        if !availability.canStartIntercepting {
-            runtimeStore.markMissingPermissions(availability.missingPermissions)
-        }
-        AppLog.info("事件监听权限请求后的状态: \(availability.logDescription)")
-        recordDiagnostic(event: .permissionRefresh, availability: availability)
-        telemetry.record(event: .environmentDiagnosed, snapshot: makeDiagnosticSnapshot(availability: availability))
-        showAuthorizationWindow(for: availability)
+        syncQuitGuardStatus(with: availability, refreshTap: true, event: .permissionRefresh)
+        syncAuthorizationWindow(with: availability, showWhenMissing: true)
     }
 
     /// 构造授权窗口所需的动态视图。
@@ -329,7 +383,7 @@ extension AppDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            Task { @MainActor in onSleep() }
+            MainActor.assumeIsolated { onSleep() }
         }
 
         let didWake = center.addObserver(
@@ -337,7 +391,7 @@ extension AppDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            Task { @MainActor in onWake() }
+            MainActor.assumeIsolated { onWake() }
         }
 
         workspaceObservers = [willSleep, didWake]
@@ -351,15 +405,21 @@ extension AppDelegate {
     }
 
     @MainActor
-    private func handleWillSleep() {
+    func handleWillSleep() {
+        isSleeping = true
+        permissionTimer?.invalidate()
+        permissionTimer = nil
+        runtimeStore.markTapDisabled()
         AppLog.info("系统即将休眠，暂停事件拦截")
         eventTapController.stop()
     }
 
     @MainActor
-    private func handleDidWake() {
+    func handleDidWake() {
+        isSleeping = false
         AppLog.info("系统已唤醒，重建事件拦截")
         configureQuitGuardAfterWake()
+        if !isRunningTests { startPermissionMonitoring() }
     }
 
     /// 生成当前运行态对应的退出保护诊断快照。
@@ -425,13 +485,4 @@ extension AppDelegate {
         runtimeStore.markBlockedByEnvironment(snapshot.suspectedFailureReason)
     }
 
-    /// 返回可用于遥测记录的最近权限快照，必要时会即时重新读取一次。
-    /// - Returns: 当前仍可信的权限快照。
-    @MainActor
-    private func currentAvailabilityForDiagnostics() -> QuitGuardAvailability {
-        if let lastAvailability {
-            return lastAvailability
-        }
-        return readAvailability(promptAccessibility: false)
-    }
 }

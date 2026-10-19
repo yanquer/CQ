@@ -69,7 +69,7 @@ struct QuitGuardAvailability: Equatable {
 
     var messageText: String {
         canStartIntercepting
-            ? "授权已经完成，点击“重启”后重新加载 Cmd+Q 拦截能力。"
+            ? "授权已经完成，CQ 将尝试恢复退出保护；实际状态可在菜单中查看。"
             : "CQ 需要以下权限才能可靠拦截 Cmd+Q："
     }
 
@@ -155,6 +155,7 @@ protocol QuitGuardPermissionChecking {
 
 protocol QuitGuardControlling: AnyObject {
     var currentTapSnapshot: TapSnapshot { get }
+    var isCurrentlyEnabled: Bool { get }
 
     /// 清除当前应用的退出确认与提示。
     func resetConfirmation()
@@ -201,7 +202,7 @@ final class QuitGuardPermissionService: QuitGuardPermissionChecking {
             isAccessibilityTrusted: checkAccessibility(promptAccessibility: promptAccessibility),
             hasListenEventAccess: listenEventChecker()
         )
-        AppLog.info("读取退出保护权限: promptAccessibility=\(promptAccessibility), \(availability.logDescription)")
+        AppLog.debug("读取退出保护权限: promptAccessibility=\(promptAccessibility), \(availability.logDescription)")
         return availability
     }
 

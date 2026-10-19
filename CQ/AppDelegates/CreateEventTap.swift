@@ -52,6 +52,12 @@ final class EventTapController: QuitGuardControlling {
 
     private(set) var currentTapSnapshot: TapSnapshot = .idle
 
+    /// 实时读取端口有效性与系统启用状态，供低频健康检查使用。
+    var isCurrentlyEnabled: Bool {
+        guard let tap else { return false }
+        return CFMachPortIsValid(tap) && tapEnabledChecker(tap)
+    }
+
     init(
         config: QuitGuardConfig,
         handler: EventHandler,
@@ -230,9 +236,10 @@ final class EventTapController: QuitGuardControlling {
         guard tap != nil, recoveryWorkItem == nil else { return }
         AppLog.info("event tap 已停用: \(eventType.rawValue)")
         markTapDisabled()
-        statusHandler(.tapDisabled)
-        // 休眠唤醒后系统可能直接停用 tap，直接重建会比单纯 enable 更稳。
         let expectedLifecycleID = lifecycleID
+        statusHandler(.tapDisabled)
+        guard tap != nil, lifecycleID == expectedLifecycleID else { return }
+        // 休眠唤醒后系统可能直接停用 tap，直接重建会比单纯 enable 更稳。
         let workItem = DispatchWorkItem { [weak self] in
             guard let self, self.lifecycleID == expectedLifecycleID, self.tap != nil else { return }
             self.recoveryWorkItem = nil
