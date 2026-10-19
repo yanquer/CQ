@@ -27,6 +27,7 @@ enum SuspectedFailureReason: String, Codable, Equatable {
     case missingAccessibility
     case missingListenEvent
     case tapCreateReturnedNil
+    case tapEnableFailed
     case tapDisabledBySystem
     case invalidCodeSignature
     case declaredSandboxButUnavailable
@@ -35,6 +36,7 @@ enum SuspectedFailureReason: String, Codable, Equatable {
 
 enum TapFailureReason: String, Codable, Equatable {
     case tapCreateReturnedNil
+    case tapEnableFailed
     case tapDisabledBySystem
 }
 
@@ -112,7 +114,7 @@ struct QuitGuardDiagnosticSnapshot: Codable, Equatable {
     /// 返回当前诊断结果是否允许继续启动全局拦截。
     var canActivateTap: Bool {
         switch suspectedFailureReason {
-        case .none, .tapCreateReturnedNil, .tapDisabledBySystem:
+        case .none, .tapCreateReturnedNil, .tapEnableFailed, .tapDisabledBySystem:
             return true
         default:
             return false
@@ -431,6 +433,7 @@ final class QuitGuardDiagnosticService: QuitGuardDiagnosing {
         if environmentSnapshot.codeSignatureStatus == .invalid { return .invalidCodeSignature }
         if environmentSnapshot.declaredSandboxState == .enabled &&
             tapSnapshot.lastFailureReason == .tapCreateReturnedNil { return .declaredSandboxButUnavailable }
+        if tapSnapshot.lastFailureReason == .tapEnableFailed { return .tapEnableFailed }
         if tapSnapshot.lastFailureReason == .tapDisabledBySystem { return .tapDisabledBySystem }
         if tapSnapshot.lastFailureReason == .tapCreateReturnedNil { return .tapCreateReturnedNil }
         return tapSnapshot.lastFailureReason == nil ? .none : .unknown

@@ -706,7 +706,8 @@ final class CQTests: XCTestCase {
             tapCreator: { _, _, _, _, _, _ in
                 creationCount += 1
                 return self.makeTestMachPort()
-            }
+            },
+            tapEnabledChecker: { _ in true }
         )
         XCTAssertTrue(controller.start())
         controller.handleTapDisabled(.tapDisabledByTimeout)
@@ -724,7 +725,8 @@ final class CQTests: XCTestCase {
             tapCreator: { _, _, _, _, _, _ in
                 creationCount += 1
                 return self.makeTestMachPort()
-            }
+            },
+            tapEnabledChecker: { _ in true }
         )
         defer { controller.stop() }
         XCTAssertTrue(controller.start())
@@ -744,7 +746,8 @@ final class CQTests: XCTestCase {
             tapCreator: { _, _, _, _, _, _ in
                 creationCount += 1
                 return self.makeTestMachPort()
-            }
+            },
+            tapEnabledChecker: { _ in true }
         )
         defer { controller.stop() }
         XCTAssertTrue(controller.start())
@@ -762,7 +765,8 @@ final class CQTests: XCTestCase {
             config: makeConfig(),
             handler: makeHandler(isBlockedApp: false),
             statusHandler: { statuses.append($0) },
-            tapCreator: { _, _, _, _, _, _ in taps.removeFirst() }
+            tapCreator: { _, _, _, _, _, _ in taps.removeFirst() },
+            tapEnabledChecker: { _ in true }
         )
 
         XCTAssertTrue(controller.start())
@@ -779,13 +783,84 @@ final class CQTests: XCTestCase {
             config: makeConfig(),
             handler: makeHandler(isBlockedApp: false),
             statusHandler: { statuses.append($0) },
-            tapCreator: { _, _, _, _, _, _ in taps.removeFirst() }
+            tapCreator: { _, _, _, _, _, _ in taps.removeFirst() },
+            tapEnabledChecker: { _ in true }
         )
 
         XCTAssertTrue(controller.start())
         controller.handleTapDisabled(.tapDisabledByUserInput)
         waitForAsyncWork()
         XCTAssertEqual(statuses, [.tapDisabled, .tapCreateFailed])
+    }
+
+    /// 验证系统报告启用失败时返回失败并释放端口，不会虚报已启用。
+    func testTapEnableFailureIsReportedAndPortIsReleased() {
+        let port = makeTestMachPort()
+        var statuses: [QuitGuardRuntimeStatus] = []
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            statusHandler: { statuses.append($0) },
+            tapCreator: { _, _, _, _, _, _ in port },
+            tapEnabledChecker: { _ in false }
+        )
+        XCTAssertFalse(controller.start())
+        XCTAssertFalse(controller.currentTapSnapshot.isEnabled)
+        XCTAssertEqual(controller.currentTapSnapshot.lastFailureReason, .tapEnableFailed)
+        XCTAssertEqual(statuses, [.tapCreateFailed])
+        XCTAssertFalse(CFMachPortIsValid(port))
+    }
+
+    /// 验证已有 tap 再次启用失败后会释放旧端口，并允许后续重新创建。
+    func testExistingTapEnableFailureAllowsFreshStart() {
+        var isEnabled = true
+        var creationCount = 0
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in
+                creationCount += 1
+                return self.makeTestMachPort()
+            },
+            tapEnabledChecker: { _ in isEnabled }
+        )
+        defer { controller.stop() }
+        XCTAssertTrue(controller.start())
+        isEnabled = false
+        XCTAssertFalse(controller.start())
+        isEnabled = true
+        XCTAssertTrue(controller.start())
+        XCTAssertEqual(creationCount, 2)
+    }
+
+    /// 验证自动恢复时即使创建成功，启用失败也不会发出 ready 状态。
+    func testRecoveryDoesNotReportReadyWhenEnableFails() {
+        var isEnabled = true
+        var statuses: [QuitGuardRuntimeStatus] = []
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            statusHandler: { statuses.append($0) },
+            tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
+            tapEnabledChecker: { _ in isEnabled }
+        )
+        defer { controller.stop() }
+        XCTAssertTrue(controller.start())
+        isEnabled = false
+        controller.handleTapDisabled(.tapDisabledByTimeout)
+        waitForAsyncWork()
+        XCTAssertEqual(statuses, [.tapDisabled, .tapCreateFailed])
+        XCTAssertEqual(controller.currentTapSnapshot.lastFailureReason, .tapEnableFailed)
+    }
+
+    /// 验证诊断保留启用失败原因并允许重新检查重试。
+    func testDiagnosticReportsTapEnableFailureAsRetryable() {
+        let snapshot = makeDiagnosticService().makeSnapshot(
+            availability: QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true),
+            tapSnapshot: TapSnapshot(
+                currentLocation: .session, currentOption: .defaultTap, isEnabled: false,
+                lastFailureReason: .tapEnableFailed, attempts: []
+            )
+        )
+        XCTAssertEqual(snapshot.suspectedFailureReason, .tapEnableFailed)
+        XCTAssertTrue(snapshot.canActivateTap)
     }
 
     /// 验证 tap 创建失败时会记录全部策略尝试结果。

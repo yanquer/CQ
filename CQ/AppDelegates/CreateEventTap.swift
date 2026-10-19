@@ -35,6 +35,7 @@ final class EventTapController: QuitGuardControlling {
     private let handler: EventHandler
     private let statusHandler: (QuitGuardRuntimeStatus) -> Void
     private let tapCreator: EventTapCreator
+    private let tapEnabledChecker: (CFMachPort) -> Bool
     private let strategies: [EventTapStrategy]
     private let tipAnimationDuration: TimeInterval = 0.18
 
@@ -54,13 +55,15 @@ final class EventTapController: QuitGuardControlling {
         handler: EventHandler,
         statusHandler: @escaping (QuitGuardRuntimeStatus) -> Void = { _ in },
         strategies: [EventTapStrategy] = EventTapStrategy.defaultStrategies,
-        tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator
+        tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator,
+        tapEnabledChecker: @escaping (CFMachPort) -> Bool = CGEvent.tapIsEnabled
     ) {
         self.config = config
         self.handler = handler
         self.statusHandler = statusHandler
         self.strategies = strategies
         self.tapCreator = tapCreator
+        self.tapEnabledChecker = tapEnabledChecker
     }
 
     /// 启动事件拦截，并返回当前是否已经成功建立 tap。
@@ -68,8 +71,9 @@ final class EventTapController: QuitGuardControlling {
     func start() -> Bool {
         if tap != nil {
             AppLog.info("event tap 已存在，直接尝试启用")
-            enableTap()
-            return currentTapSnapshot.isEnabled
+            let didEnable = enableTap()
+            if !didEnable { removeTap() }
+            return didEnable
         }
 
         AppLog.info("开始创建 event tap")
@@ -130,7 +134,10 @@ final class EventTapController: QuitGuardControlling {
             return false
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        enableTap()
+        guard enableTap() else {
+            removeTap()
+            return false
+        }
         AppLog.info("event tap 创建成功并已加入主运行循环")
         return true
     }
@@ -222,17 +229,25 @@ final class EventTapController: QuitGuardControlling {
         return keyDown | keyUp
     }
 
-    private func enableTap() {
-        guard let tap else { return }
+    /// 启用后读取系统实际状态，失败时保留诊断原因并返回失败，避免虚报保护成功。
+    private func enableTap() -> Bool {
+        guard let tap else { return false }
         CGEvent.tapEnable(tap: tap, enable: true)
+        let isEnabled = CFMachPortIsValid(tap) && tapEnabledChecker(tap)
         currentTapSnapshot = makeTapSnapshot(
             location: currentTapSnapshot.currentLocation,
             option: currentTapSnapshot.currentOption,
-            isEnabled: true,
-            failureReason: nil,
+            isEnabled: isEnabled,
+            failureReason: isEnabled ? nil : .tapEnableFailed,
             attempts: currentTapSnapshot.attempts
         )
-        AppLog.info("event tap 已启用")
+        if isEnabled {
+            AppLog.info("event tap 已启用")
+        } else {
+            AppLog.error("Event tap enable failed: system reports disabled")
+            statusHandler(.tapCreateFailed)
+        }
+        return isEnabled
     }
 
     /// 按预设策略依次尝试创建 event tap，并沉淀每次尝试结果。

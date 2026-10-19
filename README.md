@@ -44,7 +44,7 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 - 声明的 sandbox 状态
 - 推断出的主要失败原因
 
-如果诊断文件里已经提示权限满足，但 `suspectedFailureReason` 仍然是 `invalidCodeSignature`、`tapCreateReturnedNil` 或 `declaredSandboxButUnavailable`，请先重启应用，再重新验证一次。
+如果诊断文件里已经提示权限满足，但 `suspectedFailureReason` 仍然是 `invalidCodeSignature`、`tapCreateReturnedNil`、`tapEnableFailed` 或 `declaredSandboxButUnavailable`，请先重启应用，再重新验证一次。
 
 ## 开发说明
 
