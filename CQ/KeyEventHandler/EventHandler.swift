@@ -7,6 +7,7 @@
 
 import Foundation
 import AppKit
+import Carbon
 
 /// 表示退出保护可处理的 Cmd+Q 键盘事件类型。
 enum CommandQEventKind: Equatable {
@@ -16,19 +17,24 @@ enum CommandQEventKind: Equatable {
 
 /// 负责把底层键盘事件归类为 CQ 关心的 Cmd+Q 事件，隔离 CGEvent 细节。
 final class CommandQEventClassifier {
-    private let commandQKeyCode: Int64
+    private let commandQKeyCode: Int64?
+    private let keyCharacterProvider: (UInt16) -> String?
+    private var trackedKeyCode: Int64?
     private let trackedModifiers: CGEventFlags
 
     /// 初始化 Cmd+Q 事件分类器。
     /// - Parameters:
-    ///   - commandQKeyCode: Q 键对应的虚拟键码。
+    ///   - commandQKeyCode: 受控事件源可指定物理键码，默认按当前系统布局识别。
     ///   - trackedModifiers: 参与精确匹配的修饰键集合。
+    ///   - keyCharacterProvider: 将物理键按 Command 状态翻译为当前布局字符。
     init(
-        commandQKeyCode: Int64 = 12,
-        trackedModifiers: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+        commandQKeyCode: Int64? = nil,
+        trackedModifiers: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate],
+        keyCharacterProvider: @escaping (UInt16) -> String? = CommandQEventClassifier.currentLayoutCharacter
     ) {
         self.commandQKeyCode = commandQKeyCode
         self.trackedModifiers = trackedModifiers
+        self.keyCharacterProvider = keyCharacterProvider
     }
 
     /// 将底层 CGEvent 转换成退出保护可理解的 Cmd+Q 事件。
@@ -38,13 +44,15 @@ final class CommandQEventClassifier {
     /// - Returns: 可处理的 Cmd+Q 事件类型，不相关事件返回 nil。
     func classify(event: CGEvent, eventType: CGEventType) -> CommandQEventKind? {
         guard isRelevantKeyboardEvent(eventType) else { return nil }
-        guard isCommandQKey(event) else { return nil }
-
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         switch eventType {
         case .keyDown:
-            guard hasExactCommandModifier(event.flags) else { return nil }
+            guard hasExactCommandModifier(event.flags), isCommandQKey(event) else { return nil }
+            trackedKeyCode = keyCode
             return .keyDown(isAutorepeat: isAutorepeat(event))
         case .keyUp:
+            guard keyCode == trackedKeyCode else { return nil }
+            trackedKeyCode = nil
             return .keyUp
         default:
             return nil
@@ -62,7 +70,38 @@ final class CommandQEventClassifier {
     /// - Parameter event: 当前键盘事件。
     /// - Returns: 是否命中 Q 键虚拟键码。
     private func isCommandQKey(_ event: CGEvent) -> Bool {
-        event.getIntegerValueField(.keyboardEventKeycode) == commandQKeyCode
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        if let commandQKeyCode { return keyCode == commandQKeyCode }
+        guard (0...127).contains(keyCode) else { return false }
+        return keyCharacterProvider(UInt16(keyCode))?.lowercased() == "q"
+    }
+
+    /// 清除物理键跟踪，新的应用或拦截生命周期不能继承旧按压。
+    func resetTracking() {
+        trackedKeyCode = nil
+    }
+
+    /// 查询当前键盘布局，不修改输入源；输入法场景使用底层键盘布局。
+    private static func currentLayoutCharacter(_ keyCode: UInt16) -> String? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let rawData = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(rawData).takeUnretainedValue()
+        return character(for: keyCode, layoutData: data)
+    }
+
+    /// 按 Command 修饰状态翻译物理键，兼容 AZERTY、Dvorak 及 Command 下切换布局的键盘。
+    static func character(for keyCode: UInt16, layoutData: CFData) -> String? {
+        guard keyCode <= 127, CFDataGetLength(layoutData) >= MemoryLayout<UCKeyboardLayout>.size else { return nil }
+        let layout = UnsafeRawPointer(CFDataGetBytePtr(layoutData)).assumingMemoryBound(to: UCKeyboardLayout.self)
+        var deadKeyState: UInt32 = 0
+        var length = 0
+        var characters = [UniChar](repeating: 0, count: 4)
+        let result = UCKeyTranslate(
+            layout, keyCode, UInt16(kUCKeyActionDown), UInt32(cmdKey >> 8), UInt32(LMGetKbdType()),
+            OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeyState, characters.count, &length, &characters
+        )
+        guard result == noErr, length > 0 else { return nil }
+        return String(utf16CodeUnits: characters, count: length)
     }
 
     /// 判断 keyDown 是否只携带 Command 修饰键。
@@ -131,6 +170,7 @@ final class EventHandler {
     /// 清除退出确认和目标进程，避免应用切换或恢复后沿用旧状态。
     func resetRuntimeState() {
         trackedApplication = nil
+        classifier.resetTracking()
         state.reset()
     }
 

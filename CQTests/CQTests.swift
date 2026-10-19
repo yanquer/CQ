@@ -9,6 +9,7 @@ import XCTest
 import AppKit
 import Combine
 import ServiceManagement
+import Carbon
 @testable import CQ
 
 final class CQTests: XCTestCase {
@@ -346,7 +347,7 @@ final class CQTests: XCTestCase {
     }
 
     func testCommandQEventClassifierReadsAutorepeatFlag() {
-        let classifier = CommandQEventClassifier()
+        let classifier = CommandQEventClassifier(commandQKeyCode: 12)
         let event = commandQEvent(
             keyDown: true,
             flags: [.maskCommand],
@@ -359,6 +360,66 @@ final class CQTests: XCTestCase {
         )
     }
 
+    /// 验证四种受控修饰键的全部组合，仅精确 Command 会进入退出确认。
+    func testCommandModifierCombinationMatrix() {
+        let modifiers: [CGEventFlags] = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+        for combination in 0..<16 {
+            var flags: CGEventFlags = []
+            for index in 0..<4 where combination & (1 << index) != 0 { flags.insert(modifiers[index]) }
+            let classifier = CommandQEventClassifier(commandQKeyCode: 12)
+            let event = commandQEvent(keyDown: true, flags: flags)
+            let kind = classifier.classify(event: event, eventType: .keyDown)
+            XCTAssertEqual(kind != nil, flags == .maskCommand, "combination=\(combination)")
+        }
+        let classifier = CommandQEventClassifier(commandQKeyCode: 12)
+        let event = commandQEvent(keyDown: true, flags: [.maskCommand, .maskAlphaShift])
+        XCTAssertNotNil(classifier.classify(event: event, eventType: .keyDown))
+        XCTAssertNil(classifier.classify(event: event, eventType: .flagsChanged))
+    }
+
+    /// 使用系统安装的布局数据离线验证快捷键映射，不切换用户输入源或发布按键事件。
+    func testCommandQUsesInstalledKeyboardLayoutMappings() throws {
+        let layouts: [(String, Int64, Int64)] = [
+            ("com.apple.keylayout.US", 12, 0),
+            ("com.apple.keylayout.French", 0, 12),
+            ("com.apple.keylayout.Dvorak", 7, 12)
+        ]
+        for (identifier, qKey, otherKey) in layouts {
+            let sources = TISCreateInputSourceList(
+                [kTISPropertyInputSourceID as String: identifier] as CFDictionary, true
+            ).takeRetainedValue() as! [TISInputSource]
+            let source = try XCTUnwrap(sources.first, "Missing installed keyboard layout: \(identifier)")
+            let raw = try XCTUnwrap(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData))
+            let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue()
+            let classifier = CommandQEventClassifier(keyCharacterProvider: {
+                CommandQEventClassifier.character(for: $0, layoutData: data)
+            })
+            let down = commandQEvent(keyDown: true, flags: [.maskCommand])
+            down.setIntegerValueField(.keyboardEventKeycode, value: qKey)
+            XCTAssertEqual(classifier.classify(event: down, eventType: .keyDown), .keyDown(isAutorepeat: false), identifier)
+            down.setIntegerValueField(.keyboardEventKeycode, value: otherKey)
+            XCTAssertNil(classifier.classify(event: down, eventType: .keyDown), identifier)
+            let up = commandQEvent(keyDown: false, flags: [.maskShift])
+            up.setIntegerValueField(.keyboardEventKeycode, value: qKey)
+            XCTAssertEqual(classifier.classify(event: up, eventType: .keyUp), .keyUp, identifier)
+        }
+    }
+
+    /// 验证按住期间布局变化仍按原物理键结束跟踪，其他按键的松开不干扰确认。
+    func testLayoutChangeKeepsPhysicalKeyReleaseTracking() {
+        var qKey: UInt16 = 0
+        let classifier = CommandQEventClassifier(keyCharacterProvider: { $0 == qKey ? "q" : "a" })
+        let down = commandQEvent(keyDown: true, flags: [.maskCommand])
+        down.setIntegerValueField(.keyboardEventKeycode, value: 0)
+        XCTAssertNotNil(classifier.classify(event: down, eventType: .keyDown))
+        qKey = 7
+        let up = commandQEvent(keyDown: false, flags: [])
+        up.setIntegerValueField(.keyboardEventKeycode, value: 7)
+        XCTAssertNil(classifier.classify(event: up, eventType: .keyUp))
+        up.setIntegerValueField(.keyboardEventKeycode, value: 0)
+        XCTAssertEqual(classifier.classify(event: up, eventType: .keyUp), .keyUp)
+    }
+
     /// 验证同一次查询同时提供进程和路径，切换后不会沿用旧应用的白名单结论。
     func testApplicationSnapshotKeepsWhitelistAndProcessConsistent() {
         var application = QuitGuardApplication(processIdentifier: 100, bundlePath: "/Applications/Allowed.app")
@@ -366,6 +427,7 @@ final class CQTests: XCTestCase {
         let handler = EventHandler(
             config: makeConfig(), state: QuitGuardState(),
             isBlockedApp: { $0 == "/Applications/Allowed.app" },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12),
             currentApplication: { queryCount += 1; return application }
         )
         let down = commandQEvent(keyDown: true, flags: [.maskCommand])
@@ -380,6 +442,7 @@ final class CQTests: XCTestCase {
         var path = "/Applications/A.app"
         let handler = EventHandler(
             config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12),
             currentApplication: { QuitGuardApplication(processIdentifier: 100, bundlePath: path) }
         )
         let down = commandQEvent(keyDown: true, flags: [.maskCommand])
@@ -394,6 +457,7 @@ final class CQTests: XCTestCase {
         var appPID: pid_t? = 100
         let handler = EventHandler(
             config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12),
             currentApplication: { appPID.map { QuitGuardApplication(processIdentifier: $0, bundlePath: nil) } }
         )
         _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
@@ -421,6 +485,7 @@ final class CQTests: XCTestCase {
     func testUnknownApplicationDoesNotReuseConfirmation() {
         let handler = EventHandler(
             config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12),
             currentApplication: { nil }
         )
         _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
@@ -1806,6 +1871,7 @@ private extension CQTests {
             config: makeConfig(),
             state: QuitGuardState(),
             isBlockedApp: { _ in isBlockedApp },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12),
             currentApplication: { QuitGuardApplication(processIdentifier: 100, bundlePath: nil) }
         )
     }
