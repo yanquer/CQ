@@ -345,12 +345,42 @@ final class CQTests: XCTestCase {
         )
     }
 
+    /// 验证同一次查询同时提供进程和路径，切换后不会沿用旧应用的白名单结论。
+    func testApplicationSnapshotKeepsWhitelistAndProcessConsistent() {
+        var application = QuitGuardApplication(processIdentifier: 100, bundlePath: "/Applications/Allowed.app")
+        var queryCount = 0
+        let handler = EventHandler(
+            config: makeConfig(), state: QuitGuardState(),
+            isBlockedApp: { $0 == "/Applications/Allowed.app" },
+            currentApplication: { queryCount += 1; return application }
+        )
+        let down = commandQEvent(keyDown: true, flags: [.maskCommand])
+        XCTAssertEqual(handler.decision(for: down, eventType: .keyDown), .pass)
+        application = QuitGuardApplication(processIdentifier: 200, bundlePath: "/Applications/Protected.app")
+        XCTAssertEqual(handler.decision(for: down, eventType: .keyDown), .blockAndPrompt(.confirmExit(window: 3)))
+        XCTAssertEqual(queryCount, 2)
+    }
+
+    /// 验证进程号复用但应用路径不同的情形不会沿用确认窗口。
+    func testReusedProcessIdentifierWithDifferentPathResetsConfirmation() {
+        var path = "/Applications/A.app"
+        let handler = EventHandler(
+            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            currentApplication: { QuitGuardApplication(processIdentifier: 100, bundlePath: path) }
+        )
+        let down = commandQEvent(keyDown: true, flags: [.maskCommand])
+        _ = handler.decision(for: down, eventType: .keyDown)
+        _ = handler.decision(for: commandQEvent(keyDown: false, flags: []), eventType: .keyUp)
+        path = "/Applications/B.app"
+        XCTAssertEqual(handler.decision(for: down, eventType: .keyDown), .blockAndPrompt(.confirmExit(window: 3)))
+    }
+
     /// 验证前台进程变化时，新应用的第一次退出仍需确认。
     func testSwitchingApplicationsStartsNewConfirmation() {
         var appPID: pid_t? = 100
         let handler = EventHandler(
-            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { false },
-            currentAppPID: { appPID }
+            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            currentApplication: { appPID.map { QuitGuardApplication(processIdentifier: $0, bundlePath: nil) } }
         )
         _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
         _ = handler.decision(for: commandQEvent(keyDown: false, flags: []), eventType: .keyUp)
@@ -376,8 +406,8 @@ final class CQTests: XCTestCase {
     /// 验证无法识别前台进程时不会把两次按键合并成退出确认。
     func testUnknownApplicationDoesNotReuseConfirmation() {
         let handler = EventHandler(
-            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { false },
-            currentAppPID: { nil }
+            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            currentApplication: { nil }
         )
         _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
         _ = handler.decision(for: commandQEvent(keyDown: false, flags: []), eventType: .keyUp)
@@ -1479,8 +1509,8 @@ private extension CQTests {
         EventHandler(
             config: makeConfig(),
             state: QuitGuardState(),
-            isBlockedApp: { isBlockedApp },
-            currentAppPID: { 100 }
+            isBlockedApp: { _ in isBlockedApp },
+            currentApplication: { QuitGuardApplication(processIdentifier: 100, bundlePath: nil) }
         )
     }
 

@@ -80,27 +80,39 @@ final class CommandQEventClassifier {
     }
 }
 
+/// 同一次前台查询得到的进程与路径，避免应用切换时混用旧白名单缓存。
+struct QuitGuardApplication: Equatable {
+    let processIdentifier: pid_t
+    let bundlePath: String?
+
+    /// 从同一个运行应用对象读取确认身份和白名单路径。
+    static func frontmost() -> QuitGuardApplication? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        return QuitGuardApplication(processIdentifier: app.processIdentifier, bundlePath: app.bundleURL?.path)
+    }
+}
+
 final class EventHandler {
     private let config: QuitGuardConfig
     private let state: QuitGuardState
-    private let isBlockedApp: () -> Bool
+    private let isBlockedApp: (String?) -> Bool
     private let classifier: CommandQEventClassifier
-    private let currentAppPID: () -> pid_t?
-    private var trackedAppPID: pid_t?
+    private let currentApplication: () -> QuitGuardApplication?
+    private var trackedApplication: QuitGuardApplication?
 
     /// 初始化退出事件处理器，并注入前台进程查询以隔离不同应用的确认状态。
     init(
         config: QuitGuardConfig,
         state: QuitGuardState,
-        isBlockedApp: @escaping () -> Bool,
+        isBlockedApp: @escaping (String?) -> Bool,
         classifier: CommandQEventClassifier = CommandQEventClassifier(),
-        currentAppPID: @escaping () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+        currentApplication: @escaping () -> QuitGuardApplication? = QuitGuardApplication.frontmost
     ) {
         self.config = config
         self.state = state
         self.isBlockedApp = isBlockedApp
         self.classifier = classifier
-        self.currentAppPID = currentAppPID
+        self.currentApplication = currentApplication
     }
 
     func decision(for event: CGEvent, eventType: CGEventType) -> QuitDecision {
@@ -118,7 +130,7 @@ final class EventHandler {
 
     /// 清除退出确认和目标进程，避免应用切换或恢复后沿用旧状态。
     func resetRuntimeState() {
-        trackedAppPID = nil
+        trackedApplication = nil
         state.reset()
     }
 
@@ -126,12 +138,12 @@ final class EventHandler {
     /// - Parameter isAutorepeat: 当前 keyDown 是否为系统自动重复事件。
     /// - Returns: 本次 keyDown 对应的退出保护决策。
     private func handleKeyDown(isAutorepeat: Bool) -> QuitDecision {
-        let appPID = currentAppPID()
-        if appPID == nil || appPID != trackedAppPID {
+        let application = currentApplication()
+        if application == nil || application != trackedApplication {
             state.reset()
-            trackedAppPID = appPID
+            trackedApplication = application
         }
-        if isBlockedApp() {
+        if isBlockedApp(application?.bundlePath) {
             state.reset()
             return .pass
         }

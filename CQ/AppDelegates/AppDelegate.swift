@@ -75,7 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var eventHandler = EventHandler(
         config: config,
         state: state,
-        isBlockedApp: { AppBlack.this.isCurrentAppBlocked() }
+        isBlockedApp: { path in
+            guard let path else { return false }
+            return BlackList.this.contains(path)
+        }
     )
 
     private lazy var eventTapController: QuitGuardControlling = {
@@ -356,7 +359,6 @@ extension AppDelegate {
     @MainActor
     private func handleDidWake() {
         AppLog.info("系统已唤醒，重建事件拦截")
-        AppBlack.this.refreshCurrentAppPath()
         configureQuitGuardAfterWake()
     }
 

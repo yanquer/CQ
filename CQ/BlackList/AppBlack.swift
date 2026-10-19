@@ -95,56 +95,28 @@ private extension InstalledAppCatalog {
     }
 }
 
+/// 监听前台切换以清理退出确认；白名单判断由按键时的应用快照完成。
 final class AppBlack {
     static let this = AppBlack()
-
     private let workspace = NSWorkspace.shared
-    private var currentAppPath: String?
     private var activateObserver: NSObjectProtocol?
 
-    /// 监听前台应用切换，并通知退出保护清除旧应用的确认状态。
+    /// 监听前台应用切换，通知退出保护清除旧确认状态。
     func startObservingWorkspace(onActivation: @escaping () -> Void = {}) {
-        if activateObserver != nil {
-            refreshCurrentAppPath()
-            return
-        }
-
-        refreshCurrentAppPath()
+        guard activateObserver == nil else { return }
         activateObserver = workspace.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.updateCurrentAppPath(notification)
-            onActivation()
-        }
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { _ in onActivation() }
     }
 
+    /// 移除前台切换监听，避免停止后继续响应通知。
     func stopObservingWorkspace() {
         guard let activateObserver else { return }
         workspace.notificationCenter.removeObserver(activateObserver)
         self.activateObserver = nil
     }
 
-    func refreshCurrentAppPath() {
-        currentAppPath = workspace.frontmostApplication?.bundleURL?.path
-    }
-
-    func isCurrentAppBlocked() -> Bool {
-        if currentAppPath == nil {
-            refreshCurrentAppPath()
-        }
-
-        guard let currentAppPath else {
-            return false
-        }
-
-        return BlackList.this.contains(currentAppPath)
-    }
-
-    private func updateCurrentAppPath(_ notification: Notification) {
-        let key = NSWorkspace.applicationUserInfoKey
-        let app = notification.userInfo?[key] as? NSRunningApplication
-        currentAppPath = app?.bundleURL?.path
+    deinit {
+        if let activateObserver { workspace.notificationCenter.removeObserver(activateObserver) }
     }
 }
