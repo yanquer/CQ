@@ -150,6 +150,34 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(repeatDecision, .passAndReset(.ignoredLongPress))
     }
 
+    /// 验证长按后以任意修饰键组合松开 Q，下一次按压都重新进入确认。
+    func testLongPressEndsWhenQReleasedWithOtherModifiers() {
+        let modifierCases: [CGEventFlags] = [[], .maskShift, .maskControl, .maskAlternate, [.maskShift, .maskAlternate]]
+        for flags in modifierCases {
+            let handler = makeHandler(isBlockedApp: false)
+            _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+            _ = handler.decision(
+                for: commandQEvent(keyDown: true, flags: [.maskCommand], isAutorepeat: true), eventType: .keyDown
+            )
+            _ = handler.decision(for: commandQEvent(keyDown: false, flags: flags), eventType: .keyUp)
+            XCTAssertEqual(
+                handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown),
+                .blockAndPrompt(.confirmExit(window: 3)), "flags=\(flags.rawValue)"
+            )
+        }
+    }
+
+    /// 验证短按以其他修饰键松开后，真实第二次按压仍能正常确认退出。
+    func testShortPressReleasedWithShiftAllowsSecondConfirmation() {
+        let handler = makeHandler(isBlockedApp: false)
+        _ = handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
+        _ = handler.decision(for: commandQEvent(keyDown: false, flags: [.maskShift]), eventType: .keyUp)
+        XCTAssertEqual(
+            handler.decision(for: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown),
+            .passAndReset(nil)
+        )
+    }
+
     func testCommandShiftQWillNotBeIntercepted() {
         let handler = makeHandler(isBlockedApp: false)
         let decision = handler.decision(

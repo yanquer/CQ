@@ -51,20 +51,6 @@ final class CommandQEventClassifier {
         }
     }
 
-    /// 判断当前 keyUp 是否应结束一次正在跟踪的 Cmd+Q 按压。
-    /// - Parameters:
-    ///   - flags: keyUp 事件携带的修饰键。
-    ///   - isTrackingCommandQ: 当前状态机是否正在跟踪 Cmd+Q。
-    /// - Returns: 是否应清理当前按压状态。
-    func shouldTrackKeyUp(flags: CGEventFlags, isTrackingCommandQ: Bool) -> Bool {
-        if !isTrackingCommandQ {
-            return false
-        }
-
-        let modifiers = flags.intersection(trackedModifiers)
-        return modifiers.contains(.maskCommand) || modifiers.isEmpty
-    }
-
     /// 判断事件类型是否属于退出保护关心的键盘事件。
     /// - Parameter eventType: 当前事件类型。
     /// - Returns: 是否是 keyDown 或 keyUp。
@@ -126,7 +112,7 @@ final class EventHandler {
         case .keyDown(let isAutorepeat):
             return handleKeyDown(isAutorepeat: isAutorepeat)
         case .keyUp:
-            return handleKeyUp(event.flags)
+            return handleKeyUp()
         }
     }
 
@@ -162,17 +148,9 @@ final class EventHandler {
         return decision
     }
 
-    /// 处理 Cmd+Q keyUp，并在一次按压结束时清理长按跟踪状态。
-    /// - Parameter flags: keyUp 事件携带的修饰键。
-    /// - Returns: keyUp 永远透传给前台应用。
-    private func handleKeyUp(_ flags: CGEventFlags) -> QuitDecision {
-        guard classifier.shouldTrackKeyUp(
-            flags: flags,
-            isTrackingCommandQ: state.isTrackingCommandQ
-        ) else {
-            return .pass
-        }
-
+    /// Q 键松开即结束按压跟踪，不受松键时剩余修饰键影响。
+    private func handleKeyUp() -> QuitDecision {
+        guard state.isTrackingCommandQ else { return .pass }
         state.markKeyUp()
         return .pass
     }
