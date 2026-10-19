@@ -588,6 +588,62 @@ final class CQTests: XCTestCase {
         XCTAssertEqual(statuses, [.tapCreateFailed])
     }
 
+    /// 验证主动停止后，排队中的自动恢复不会重新创建拦截。
+    func testStoppingTapCancelsPendingRecovery() {
+        var creationCount = 0
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in
+                creationCount += 1
+                return self.makeTestMachPort()
+            }
+        )
+        XCTAssertTrue(controller.start())
+        controller.handleTapDisabled(.tapDisabledByTimeout)
+        controller.stop()
+        waitForAsyncWork()
+        XCTAssertEqual(creationCount, 1)
+        XCTAssertFalse(controller.currentTapSnapshot.isEnabled)
+    }
+
+    /// 验证停止后重新启动时，上一轮生命周期的恢复任务不会干扰新 tap。
+    func testPreviousRecoveryDoesNotRebuildNewTap() {
+        var creationCount = 0
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in
+                creationCount += 1
+                return self.makeTestMachPort()
+            }
+        )
+        defer { controller.stop() }
+        XCTAssertTrue(controller.start())
+        controller.handleTapDisabled(.tapDisabledByTimeout)
+        controller.stop()
+        XCTAssertTrue(controller.start())
+        waitForAsyncWork()
+        XCTAssertEqual(creationCount, 2)
+        XCTAssertTrue(controller.currentTapSnapshot.isEnabled)
+    }
+
+    /// 验证连续停用通知只安排一次恢复，避免反复重建正常 tap。
+    func testRepeatedTapDisableNotificationsShareOneRecovery() {
+        var creationCount = 0
+        let controller = EventTapController(
+            config: makeConfig(), handler: makeHandler(isBlockedApp: false),
+            tapCreator: { _, _, _, _, _, _ in
+                creationCount += 1
+                return self.makeTestMachPort()
+            }
+        )
+        defer { controller.stop() }
+        XCTAssertTrue(controller.start())
+        controller.handleTapDisabled(.tapDisabledByTimeout)
+        controller.handleTapDisabled(.tapDisabledByUserInput)
+        waitForAsyncWork()
+        XCTAssertEqual(creationCount, 2)
+    }
+
     /// 验证 tap 被系统停用后，恢复成功会回传 ready。
     func testEventTapControllerReportsReadyAfterTapRecovers() {
         var statuses: [QuitGuardRuntimeStatus] = []

@@ -40,6 +40,8 @@ final class EventTapController: QuitGuardControlling {
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var recoveryWorkItem: DispatchWorkItem?
+    private var lifecycleID = UUID()
     private var tipWindow: TipPanel?
     private var tipModel: TipOverlayModel?
     private var tipCloseWorkItem: DispatchWorkItem?
@@ -74,7 +76,11 @@ final class EventTapController: QuitGuardControlling {
         return createTap()
     }
 
+    /// 停止拦截并取消尚未执行的恢复，防止旧任务重新启动已停止的生命周期。
     func stop() {
+        lifecycleID = UUID()
+        recoveryWorkItem?.cancel()
+        recoveryWorkItem = nil
         AppLog.info("停止 event tap 并清理运行态")
         handler.resetRuntimeState()
         destroyTipWindow()
@@ -177,12 +183,15 @@ final class EventTapController: QuitGuardControlling {
     /// 处理系统停用 event tap 的恢复流程，并把结果写回运行状态。
     /// - Parameter eventType: 系统返回的停用事件类型。
     func handleTapDisabled(_ eventType: CGEventType) {
+        guard tap != nil, recoveryWorkItem == nil else { return }
         AppLog.info("event tap 已停用: \(eventType.rawValue)")
         markTapDisabled()
         statusHandler(.tapDisabled)
         // 休眠唤醒后系统可能直接停用 tap，直接重建会比单纯 enable 更稳。
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+        let expectedLifecycleID = lifecycleID
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.lifecycleID == expectedLifecycleID, self.tap != nil else { return }
+            self.recoveryWorkItem = nil
             if self.refresh() {
                 AppLog.info("event tap 恢复成功")
                 self.statusHandler(.ready)
@@ -190,6 +199,8 @@ final class EventTapController: QuitGuardControlling {
                 AppLog.error("event tap 恢复失败")
             }
         }
+        recoveryWorkItem = workItem
+        DispatchQueue.main.async(execute: workItem)
     }
 
     private func removeTap() {
