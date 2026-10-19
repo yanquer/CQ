@@ -917,8 +917,11 @@ final class CQTests: XCTestCase {
         )
         XCTAssertTrue(controller.start())
         controller.stop()
-        let result = controller.handle(event: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
-        XCTAssertNotNil(result)
+        let event = commandQEvent(keyDown: true, flags: [.maskCommand])
+        withExtendedLifetime(event) {
+            let result = controller.handle(event: event, eventType: .keyDown)
+            XCTAssertNotNil(result)
+        }
         waitForAsyncWork()
         XCTAssertFalse(state.isAwaitingSecondPress)
         XCTAssertEqual(presentationCount, 0)

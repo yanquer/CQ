@@ -171,6 +171,7 @@ final class EventTapController: QuitGuardControlling {
     }
 
     /// 处理单个事件；测试直接传入事件对象，不向其他应用发送键盘输入。
+    /// 返回借用引用，调用方需持有原事件直到使用完返回值。
     func handle(event: CGEvent, eventType: CGEventType) -> Unmanaged<CGEvent>? {
         if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
             handleTapDisabled(eventType)
