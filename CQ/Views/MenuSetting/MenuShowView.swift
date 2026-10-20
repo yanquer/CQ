@@ -275,19 +275,17 @@ final class MenuPanelModel: ObservableObject {
 
     /// 汇总次要设置状态，保护状态由页头单独展示。
     var settingsSummaryText: String {
-        let suffix = whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
-        let pending = hasPendingChanges ? " · 有未应用更改" : ""
-        return "\(suffix)\(pending)"
+        whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
     }
 
     var whitelistSubtitleText: String {
         if whitelistItems.isEmpty {
-            return "放行后不会触发二次确认，适合你明确不想拦截的应用。"
+            return "这些应用可直接退出。添加和移除立即保存。"
         }
         if hasActiveWhitelistSearch {
-            return "共 \(whitelistItems.count) 个应用，当前匹配 \(filteredWhitelistItems.count) 个。"
+            return "共 \(whitelistItems.count) 个应用，匹配 \(filteredWhitelistItems.count) 个。更改立即保存。"
         }
-        return "当前已放行 \(whitelistItems.count) 个应用，点击条目后可直接移除。"
+        return "已放行 \(whitelistItems.count) 个应用。添加和移除立即保存。"
     }
 
     var appPickerSubtitleText: String {
@@ -773,20 +771,25 @@ struct MenuActionBar: View {
     @ObservedObject var model: MenuPanelModel
 
     var body: some View {
-        HStack(spacing: MenuPanelStyle.actionBarSpacing) {
+        VStack(alignment: .leading, spacing: MenuPanelStyle.actionBarSpacing) {
+            if model.selectedTab == .whitelist && model.hasPendingChanges {
+                HStack {
+                    Text("通用设置中有未保存的时间更改")
+                        .font(MenuPanelStyle.helperFont)
+                        .foregroundStyle(MenuPanelStyle.textSecondary)
+                    Spacer()
+                    Button("返回通用") {
+                        model.selectedTab = .general
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
             MenuInlineActionButton(
                 title: "退出",
                 systemImage: "power",
                 kind: .secondary,
                 isDisabled: false,
                 action: model.quitApp
-            )
-            MenuInlineActionButton(
-                title: "应用更改",
-                systemImage: "checkmark.circle.fill",
-                kind: .primary,
-                isDisabled: !model.hasPendingChanges,
-                action: model.applySettings
             )
         }
         .padding(.top, 2)

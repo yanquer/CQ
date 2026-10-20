@@ -16,7 +16,7 @@ struct GeneralSettingsSection: View {
         VStack(alignment: .leading, spacing: MenuPanelStyle.sectionSpacing) {
             MenuPanelCard(
                 title: "启动行为",
-                subtitle: "保持常驻，但不打扰你的工作流。"
+                subtitle: "此项更改立即生效。"
             ) {
                 VStack(alignment: .leading, spacing: 8) {
                     MenuSettingToggleRow(
@@ -42,7 +42,7 @@ struct GeneralSettingsSection: View {
 
             MenuPanelCard(
                 title: "退出保护行为",
-                subtitle: "改的是保护节奏，点击“应用更改”后才会写回配置。"
+                subtitle: "以下两项时间设置需点击“应用更改”保存。"
             ) {
                 VStack(spacing: MenuPanelStyle.settingGroupSpacing) {
                     MenuSettingSliderRow(
@@ -55,6 +55,19 @@ struct GeneralSettingsSection: View {
                         subtitle: "提示浮层的停留时间，适合按自己的节奏调整。",
                         value: $model.alertCloseTimeDraft
                     )
+                    HStack(spacing: 12) {
+                        Text(model.hasPendingChanges ? "时间设置尚未保存" : "时间设置已保存")
+                            .font(MenuPanelStyle.helperFont)
+                            .foregroundStyle(MenuPanelStyle.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        MenuInlineActionButton(
+                            title: "应用更改",
+                            systemImage: "checkmark",
+                            kind: .primary,
+                            isDisabled: !model.hasPendingChanges,
+                            action: model.applySettings
+                        )
+                    }
                 }
             }
         }

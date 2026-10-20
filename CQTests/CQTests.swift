@@ -1265,7 +1265,7 @@ final class CQTests: XCTestCase {
         let model = makeMenuPanelModel(records: [])
         model.doubleTapIntervalDraft += 1
         XCTAssertEqual(model.runtimeStatus.headlineText, "保护已暂停")
-        XCTAssertTrue(model.settingsSummaryText.contains("未应用更改"))
+        XCTAssertTrue(model.hasPendingChanges)
     }
 
     /// 验证所有异常状态都有独立的原因说明，且不会误用正常保护样式。
@@ -1545,6 +1545,31 @@ final class CQTests: XCTestCase {
         XCTAssertFalse(model.hasPendingChanges)
         model.doubleTapIntervalDraft = 6
         XCTAssertTrue(model.hasPendingChanges)
+    }
+
+    /// 验证切换页签和立即生效的开关、白名单操作不会偷偷应用时间草稿。
+    func testImmediateSettingsKeepTimingDraftsPending() {
+        let config = makeConfig()
+        let list = makeBlackList(records: ["/Applications/Example.app"])
+        var loginEnabled = false
+        let model = MenuPanelModel(
+            config: config, blackList: list,
+            autoLaunchStatus: { loginEnabled ? .enabled : .notRegistered },
+            setAutoLaunch: { loginEnabled = $0 }
+        )
+        model.doubleTapIntervalDraft = 6
+        model.selectedTab = .whitelist
+        model.toggleLaunchAtLogin(true)
+        model.selectWhitelistItem(list.records.first)
+        model.removeSelectedWhitelistItem()
+        XCTAssertTrue(loginEnabled)
+        XCTAssertTrue(list.records.isEmpty)
+        XCTAssertEqual(config.doubleTapInterval, 3)
+        XCTAssertTrue(model.hasPendingChanges)
+        model.selectedTab = .general
+        model.applySettings()
+        XCTAssertEqual(config.doubleTapInterval, 6)
+        XCTAssertFalse(model.hasPendingChanges)
     }
 
     /// 验证异常巨大的本地 JSON 被有界拒绝，不能覆盖已保存的有效记录。
