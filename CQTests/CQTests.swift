@@ -10,9 +10,170 @@ import AppKit
 import Combine
 import ServiceManagement
 import Carbon
+import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证真实渲染的滑块、清空搜索和已选应用能向辅助功能提供可理解的名称与状态。
+    @MainActor
+    func testMenuControlsExposeAccessibleNamesAndSelection() {
+        let model = makeMenuPanelModel(records: ["/Applications/Example.app"])
+        let window = makeMenuTestWindow(MenuPanelScreen(model: model, size: .popover))
+        window.makeKeyAndOrderFront(nil)
+        waitForAsyncWork()
+        defer { window.close() }
+        let controls = accessibilityElements(in: window.contentView!)
+        let sliders = controls.filter {
+            ($0 as AnyObject).accessibilityRole?() == .slider
+        }
+        XCTAssertEqual(sliders.count, 2)
+        XCTAssertEqual(Set(sliders.map(accessibilityName)), ["再次按键时限", "提示停留时间"])
+        model.selectedTab = .whitelist
+        model.whitelistSearchText = "Example"
+        model.selectWhitelistItem(model.whitelistItems.first)
+        waitForAsyncWork()
+        window.contentView?.layoutSubtreeIfNeeded()
+        let whitelistControls = accessibilityElements(in: window.contentView!)
+        let clear = whitelistControls.first { accessibilityName($0) == "清空搜索" }
+        let diagnostics = whitelistControls.map {
+            let value: Any? = ($0 as AnyObject).accessibilityValue?()
+            return "\(type(of: $0)): name=\(accessibilityName($0)), value=\(String(describing: value))"
+        }.joined(separator: "\n")
+        XCTAssertNotNil(clear, diagnostics)
+        XCTAssertTrue(whitelistControls.contains {
+            let value: Any? = ($0 as AnyObject).accessibilityValue?()
+            return accessibilityName($0) == "Example" && (value as? String) == "已选中"
+        }, diagnostics)
+        XCTAssertTrue((clear as AnyObject?)?.accessibilityPerformPress?() == true)
+        XCTAssertEqual(model.whitelistSearchText, "")
+    }
+
+    /// 验证原生模态选择器聚焦搜索框，Return 确认选中项，Escape 取消且不写入白名单。
+    @MainActor
+    func testAppPickerSheetHandlesReturnAndEscape() throws {
+        let item = makeAppPickerItem("/Applications/Example.app")
+        let list = makeBlackList()
+        let model = makeMenuPanelModel(records: [], blackList: list, appCatalog: AppCatalogSpy(items: [item]))
+        model.selectedTab = .whitelist
+        let settingsWindow = makeMenuTestWindow(MenuPanelScreen(model: model, size: .expanded))
+        settingsWindow.makeKeyAndOrderFront(nil)
+        let window = makeMenuTestWindow(MenuPanelScreen(model: model, size: .popover))
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            model.dismissAppPicker()
+            window.close()
+            settingsWindow.close()
+        }
+        try pressMenuTestButton("添加应用", in: window.contentView!)
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        XCTAssertNil(settingsWindow.attachedSheet, "Only the initiating surface should present the picker")
+        XCTAssertTrue(sheet.firstResponder is NSTextView, "Search should receive initial keyboard focus")
+        sendMenuTestKey(to: sheet, code: 36, characters: "\r")
+        XCTAssertTrue(model.isShowingAppPicker)
+        XCTAssertTrue(list.records.isEmpty)
+        model.selectAppPickerItem(item)
+        sendMenuTestKey(to: sheet, code: 36, characters: "\r")
+        waitForAsyncWork()
+        XCTAssertEqual(list.records, [item.path])
+        XCTAssertFalse(model.isShowingAppPicker)
+        // 等待系统完成收起动画后再打开下一次选择，避免测试与 AppKit 转场竞争。
+        let dismissed = expectation(for: NSPredicate { _, _ in window.attachedSheet == nil }, evaluatedWith: nil)
+        wait(for: [dismissed], timeout: 3)
+        try pressMenuTestButton("添加应用", in: window.contentView!)
+        let reopenedSheet = try XCTUnwrap(window.attachedSheet)
+        sendMenuTestKey(to: reopenedSheet, code: 53, characters: "\u{1b}")
+        waitForAsyncWork()
+        XCTAssertFalse(model.isShowingAppPicker)
+        XCTAssertEqual(list.records, [item.path])
+    }
+
+    /// 验证实际菜单弹层能够承载原生选择窗口，取消选择后菜单仍然可用。
+    @MainActor
+    func testAppPickerSheetWorksInsideMenuPopover() throws {
+        let picker = SystemAppPickerSpy(selectedURL: nil)
+        let model = makeMenuPanelModel(records: [], systemAppPicker: picker)
+        model.selectedTab = .whitelist
+        let anchor = NSButton(title: "CQ", target: nil, action: nil)
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 80, height: 40),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = anchor
+        window.makeKeyAndOrderFront(nil)
+        let hosting = NSHostingController(rootView: MenuPanelScreen(model: model, size: .popover))
+        let popover = NSPopover()
+        popover.behavior = .applicationDefined
+        popover.animates = false
+        popover.contentViewController = hosting
+        defer {
+            model.dismissAppPicker()
+            popover.close()
+            window.close()
+        }
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        try pressMenuTestButton("添加应用", in: hosting.view)
+        let sheet = try XCTUnwrap(hosting.view.window?.attachedSheet)
+        XCTAssertTrue(popover.isShown)
+        sendMenuTestKey(to: sheet, code: 53, characters: "\u{1b}")
+        waitForAsyncWork()
+        XCTAssertFalse(model.isShowingAppPicker)
+        XCTAssertTrue(popover.isShown)
+        let dismissed = expectation(for: NSPredicate { _, _ in hosting.view.window?.attachedSheet == nil }, evaluatedWith: nil)
+        wait(for: [dismissed], timeout: 3)
+        try pressMenuTestButton("添加应用", in: hosting.view)
+        let reopenedSheet = try XCTUnwrap(hosting.view.window?.attachedSheet?.contentView)
+        try pressMenuTestButton("浏览…", in: reopenedSheet)
+        let browsed = expectation(for: NSPredicate { _, _ in picker.pickCallCount == 1 }, evaluatedWith: nil)
+        wait(for: [browsed], timeout: 3)
+        XCTAssertTrue(popover.isShown)
+    }
+
+    /// 为菜单和设置窗口的常见及异常状态保留真实 AppKit 渲染截图，供布局回归检查。
+    @MainActor
+    func testMenuScreensRenderRepresentativeStates() throws {
+        let model = MenuPanelModel(
+            config: makeConfig(), blackList: makeBlackList(),
+            autoLaunchStatus: { .notRegistered }, setAutoLaunch: { _ in }, runtimeStatus: .ready
+        )
+        try attachMenuRendering(MenuPanelScreen(model: model, size: .popover), name: "general")
+        model.doubleTapIntervalDraft = 6
+        try attachMenuRendering(MenuPanelScreen(model: model, size: .expanded), name: "settings-pending")
+        model.selectedTab = .whitelist
+        try attachMenuRendering(MenuPanelScreen(model: model, size: .popover), name: "whitelist-empty-pending")
+        let populated = makeMenuPanelModel(records: [
+            "/Applications/Example.app",
+            "/Applications/Utilities/An Application With A Very Long Display Name.app"
+        ])
+        populated.selectedTab = .whitelist
+        populated.selectWhitelistItem(populated.whitelistItems.first)
+        try attachMenuRendering(MenuPanelScreen(model: populated, size: .popover), name: "whitelist-selected")
+        populated.whitelistSearchText = "no-match"
+        try attachMenuRendering(MenuPanelScreen(model: populated, size: .popover), name: "whitelist-no-results")
+        let approval = MenuPanelModel(
+            config: makeConfig(), blackList: makeBlackList(),
+            autoLaunchStatus: { .requiresApproval }, setAutoLaunch: { _ in },
+            runtimeStatus: .missingPermissions([.accessibility, .listenEvent])
+        )
+        try attachMenuRendering(MenuPanelScreen(model: approval, size: .popover), name: "permissions-and-approval")
+        try attachMenuRendering(
+            MenuAppPickerSheet(model: populated).padding(16).frame(width: 416)
+                .background(MenuPanelStyle.panelBackground).preferredColorScheme(.dark),
+            name: "app-picker-empty"
+        )
+        let item = makeAppPickerItem("/Applications/Utilities/An Application With A Very Long Display Name.app")
+        let pickerModel = makeMenuPanelModel(records: [], appCatalog: AppCatalogSpy(items: [item]))
+        pickerModel.addWhitelistApp()
+        waitForAsyncWork()
+        pickerModel.selectAppPickerItem(item)
+        try attachMenuRendering(
+            MenuAppPickerSheet(model: pickerModel).padding(16).frame(width: 416)
+                .background(MenuPanelStyle.panelBackground).preferredColorScheme(.dark),
+            name: "app-picker-selected"
+        )
+        pickerModel.dismissAppPicker()
+    }
+
     /// 验证新实例启动失败时不会退出仍可工作的当前应用。
     @MainActor
     func testRelaunchFailureKeepsCurrentProcessRunning() {
@@ -1920,10 +2081,29 @@ final class CQTests: XCTestCase {
         model.addWhitelistApp()
         waitForAsyncWork()
         model.addWhitelistAppFromFinder()
+        model.appPickerDidDismiss()
         waitForAsyncWork()
 
         XCTAssertTrue(blackList.records.isEmpty)
         XCTAssertFalse(model.isShowingAppPicker)
+    }
+
+    /// 验证浏览操作等待原生窗口完全关闭后才打开 Finder，重复关闭回调不会重复选择。
+    func testFinderPickerWaitsForNativeSheetDismissal() {
+        let picker = SystemAppPickerSpy(selectedURL: URL(fileURLWithPath: "/Applications/Example.app"))
+        let list = makeBlackList()
+        let model = makeMenuPanelModel(records: [], blackList: list, systemAppPicker: picker)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.addWhitelistAppFromFinder()
+        XCTAssertFalse(model.isShowingAppPicker)
+        XCTAssertEqual(picker.pickCallCount, 0)
+        XCTAssertTrue(list.records.isEmpty)
+        model.appPickerDidDismiss()
+        XCTAssertEqual(picker.pickCallCount, 1)
+        XCTAssertEqual(list.records, ["/Applications/Example.app"])
+        model.appPickerDidDismiss()
+        XCTAssertEqual(picker.pickCallCount, 1)
     }
 
     func testMenuButtonEventMaskSupportsLeftAndRightClick() {
@@ -1962,6 +2142,90 @@ final class CQTests: XCTestCase {
 }
 
 private extension CQTests {
+    /// 使用隔离模型创建真实宿主窗口，不启动退出拦截、不读写用户配置。
+    @MainActor
+    func makeMenuTestWindow<Content: View>(_ content: Content) -> NSWindow {
+        let hosting = NSHostingView(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        waitForAsyncWork()
+        return window
+    }
+
+    /// 按公开辅助功能方法遍历宿主树，兼容只实现部分协议的 SwiftUI 虚拟节点。
+    @MainActor
+    func accessibilityElements(in root: NSView) -> [NSObject] {
+        var pending: [Any] = [root]
+        var result: [NSObject] = []
+        var visited: Set<ObjectIdentifier> = []
+        while let next = pending.popLast(), result.count < 1024 {
+            guard let element = next as? NSObject,
+                  visited.insert(ObjectIdentifier(element)).inserted else { continue }
+            result.append(element)
+            pending.append(contentsOf: (element as AnyObject).accessibilityChildren?() ?? [])
+        }
+        return result
+    }
+
+    /// 读取系统对外暴露的名称，兼容 AppKit 标题与 SwiftUI 的描述属性。
+    @MainActor
+    func accessibilityName(_ element: NSObject) -> String {
+        let names = [
+            (element as AnyObject).accessibilityLabel?(),
+            (element as AnyObject).accessibilityTitle?()
+        ]
+        return names.compactMap { $0 }.first { !$0.isEmpty } ?? ""
+    }
+
+    /// 通过公开辅助功能动作点击测试窗口内的按钮，验证实际界面与模型的连接。
+    @MainActor
+    func pressMenuTestButton(_ title: String, in view: NSView) throws {
+        view.layoutSubtreeIfNeeded()
+        waitForAsyncWork()
+        let button = try XCTUnwrap(accessibilityElements(in: view).first { accessibilityName($0) == title })
+        XCTAssertTrue((button as AnyObject).accessibilityPerformPress?() == true)
+        waitForAsyncWork()
+    }
+
+    /// 将指定按键仅发送到测试窗口，避免影响用户正在使用的其他应用。
+    @MainActor
+    func sendMenuTestKey(to window: NSWindow, code: UInt16, characters: String) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+        ) else {
+            XCTFail("Could not create keyboard event")
+            return
+        }
+        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+    }
+
+    /// 将真实宿主内容离屏绘制成附件，检查尺寸有效且便于统一审阅各界面状态。
+    @MainActor
+    func attachMenuRendering<Content: View>(_ content: Content, name: String) throws {
+        let window = makeMenuTestWindow(content)
+        defer { window.close() }
+        let view = try XCTUnwrap(window.contentView)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(view.bounds.width, 0)
+        XCTAssertGreaterThan(view.bounds.height, 0)
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(bitmap)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func makeConfig(doubleTap: TimeInterval = 3, alert: TimeInterval = 3) -> QuitGuardConfig {
         let store = QuitGuardSettingsStore(userDefaults: makeUserDefaults())
         let config = QuitGuardConfig(store: store)
@@ -2157,11 +2421,20 @@ private struct AppCatalogSpy: InstalledAppCataloging {
     }
 }
 
-private struct SystemAppPickerSpy: SystemAppPicking {
+/// 模拟系统应用选择器，验证选择结果及模态窗口交接次数。
+private final class SystemAppPickerSpy: SystemAppPicking {
     let selectedURL: URL?
+    private(set) var pickCallCount: Int = 0
 
+    /// 保存测试指定的选择结果，避免测试打开真实 Finder 面板。
+    init(selectedURL: URL?) {
+        self.selectedURL = selectedURL
+    }
+
+    /// 返回预设应用路径并记录实际打开次数。
     func pickApp() -> URL? {
-        selectedURL
+        pickCallCount += 1
+        return selectedURL
     }
 }
 

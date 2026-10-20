@@ -10,6 +10,13 @@ import SwiftUI
 
 struct WhitelistSection: View {
     @ObservedObject var model: MenuPanelModel
+    let addAppAction: () -> Void
+
+    /// 复用白名单内容，并将选择窗口的打开动作交给当前宿主界面。
+    init(model: MenuPanelModel, addAppAction: (() -> Void)? = nil) {
+        self.model = model
+        self.addAppAction = addAppAction ?? model.addWhitelistApp
+    }
 
     var body: some View {
         MenuPanelCard(
@@ -40,8 +47,8 @@ struct WhitelistSection: View {
                         title: "添加应用",
                         systemImage: "plus",
                         kind: .primary,
-                        isDisabled: false,
-                        action: model.addWhitelistApp
+                        isDisabled: model.isShowingAppPicker,
+                        action: addAppAction
                     )
                 }
             }
@@ -86,14 +93,19 @@ private extension WhitelistSection {
 
 struct MenuWhitelistSearchField: View {
     @Binding var text: String
+    @FocusState private var isFocused: Bool
     let placeholder: String
+    let focusesOnAppear: Bool
 
+    /// 创建带清空操作的搜索框，并允许应用选择器打开时自动聚焦。
     init(
         text: Binding<String>,
-        placeholder: String = "搜索应用名或路径"
+        placeholder: String = "搜索应用名或路径",
+        focusesOnAppear: Bool = false
     ) {
         self._text = text
         self.placeholder = placeholder
+        self.focusesOnAppear = focusesOnAppear
     }
 
     var body: some View {
@@ -104,6 +116,8 @@ struct MenuWhitelistSearchField: View {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .foregroundStyle(MenuPanelStyle.textPrimary)
+                .focused($isFocused)
+                .accessibilityLabel(placeholder)
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -112,11 +126,16 @@ struct MenuWhitelistSearchField: View {
                         .foregroundStyle(MenuPanelStyle.textMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("清空搜索")
+                .help("清空搜索")
             }
         }
         .padding(.horizontal, MenuPanelStyle.whitelistSearchHorizontalPadding)
         .padding(.vertical, MenuPanelStyle.whitelistSearchVerticalPadding)
         .background(searchBackground)
+        .onAppear {
+            if focusesOnAppear { isFocused = true }
+        }
     }
 }
 
@@ -179,6 +198,11 @@ struct MenuWhitelistRow: View {
             .background(rowBackground)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(appName)
+        .accessibilityValue(isSelected ? "已选中" : "未选中")
+        .accessibilityHint(path)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .help(path)
     }
 }
 
@@ -203,31 +227,6 @@ private extension MenuWhitelistRow {
     }
 }
 
-struct MenuAppPickerOverlay: View {
-    @ObservedObject var model: MenuPanelModel
-
-    var body: some View {
-        if model.isShowingAppPicker {
-            ZStack {
-                Color.black.opacity(0.42)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        model.dismissAppPicker()
-                    }
-                MenuAppPickerSheet(model: model)
-                    .padding(14)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: MenuPanelStyle.cornerRadius,
-                    style: .continuous
-                )
-            )
-        }
-    }
-}
-
 struct MenuAppPickerSheet: View {
     @ObservedObject var model: MenuPanelModel
 
@@ -239,8 +238,10 @@ struct MenuAppPickerSheet: View {
             VStack(spacing: MenuPanelStyle.whitelistSectionSpacing) {
                 MenuWhitelistSearchField(
                     text: $model.appPickerSearchText,
-                    placeholder: "搜索应用名或路径"
+                    placeholder: "搜索应用名或路径",
+                    focusesOnAppear: true
                 )
+                .onSubmit(model.confirmAppPickerSelection)
                 listContent
                 if let error = model.whitelistError {
                     Text(error)
@@ -256,14 +257,17 @@ struct MenuAppPickerSheet: View {
                     Spacer()
                     Button("取消", action: model.dismissAppPicker)
                         .buttonStyle(.bordered)
+                        .keyboardShortcut(.cancelAction)
                     Button("添加", action: model.confirmAppPickerSelection)
                         .buttonStyle(.borderedProminent)
                         .tint(MenuPanelStyle.accent)
                         .disabled(!model.canConfirmAppPickerSelection)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity)
+        .onExitCommand(perform: model.dismissAppPicker)
     }
 }
 

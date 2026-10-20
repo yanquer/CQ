@@ -84,9 +84,6 @@ struct MenuPanelStyle {
     static let headerSpacing: CGFloat = 8
     static let headerTitleRowSpacing: CGFloat = 12
     static let headerIconSize: CGFloat = 32
-    static let segmentedSpacing: CGFloat = 8
-    static let segmentedContainerPadding: CGFloat = 6
-    static let segmentedVerticalPadding: CGFloat = 8
     static let actionBarSpacing: CGFloat = 12
     static let actionButtonVerticalPadding: CGFloat = 10
     static let actionButtonHorizontalPadding: CGFloat = 12
@@ -111,7 +108,6 @@ struct MenuPanelStyle {
     static let emptyStateHorizontalPadding: CGFloat = 18
     static let headerTitleFont: Font = .system(size: 18, weight: .bold, design: .rounded)
     static let headerSubtitleFont: Font = .system(size: 11)
-    static let segmentedLabelFont: Font = .system(size: 12, weight: .semibold)
     static let cardTitleFont: Font = .system(size: 14, weight: .semibold)
     static let helperFont: Font = .system(size: 11)
     static let settingTitleFont: Font = .system(size: 13, weight: .semibold)
@@ -207,6 +203,7 @@ final class MenuPanelModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var appPickerRequestID: UUID?
     private var appPickerLoadWorkItem: DispatchWorkItem?
+    private var shouldOpenFinderAfterDismissal: Bool = false
 
     /// 初始化面板配置、运行状态订阅及用户操作回调。
     init(
@@ -366,13 +363,17 @@ final class MenuPanelModel: ObservableObject {
         selectedAppPickerItem = nil
     }
 
+    /// 先关闭原生选择窗口，再由关闭回调打开 Finder，避免两个模态窗口重叠。
     func addWhitelistAppFromFinder() {
         dismissAppPicker()
-        DispatchQueue.main.async { [weak self] in
-            // 让选择层先退出，再交给系统面板接管焦点。
-            guard let self else { return }
-            self.appendWhitelist(self.systemAppPicker.pickApp())
-        }
+        shouldOpenFinderAfterDismissal = true
+    }
+
+    /// 在系统完成选择窗口的关闭动画后执行待处理的 Finder 选择，且只执行一次。
+    func appPickerDidDismiss() {
+        guard shouldOpenFinderAfterDismissal else { return }
+        shouldOpenFinderAfterDismissal = false
+        appendWhitelist(systemAppPicker.pickApp())
     }
 
     /// 面板释放时取消尚未启动的扫描，执行中的结果不会持有面板。
@@ -528,6 +529,7 @@ private extension MenuPanelModel {
 
 struct MenuPanelScreen: View {
     @ObservedObject var model: MenuPanelModel
+    @State private var ownsAppPicker: Bool = false
 
     let size: MenuPanelSize
 
@@ -537,11 +539,26 @@ struct MenuPanelScreen: View {
                 .ignoresSafeArea()
             content
                 .padding(size.outerPadding)
-            MenuAppPickerOverlay(model: model)
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: MenuPanelStyle.cornerRadius, style: .continuous))
         .preferredColorScheme(.dark)
+        .sheet(
+            isPresented: Binding(
+                get: { ownsAppPicker && model.isShowingAppPicker },
+                set: { if !$0 { model.dismissAppPicker() } }
+            ),
+            onDismiss: {
+                ownsAppPicker = false
+                model.appPickerDidDismiss()
+            }
+        ) {
+            MenuAppPickerSheet(model: model)
+                .padding(16)
+                .frame(width: size.width)
+                .background(MenuPanelStyle.panelBackground)
+                .preferredColorScheme(.dark)
+        }
     }
 }
 
@@ -568,7 +585,11 @@ private extension MenuPanelScreen {
         case .general:
             GeneralSettingsSection(model: model)
         case .whitelist:
-            WhitelistSection(model: model)
+            WhitelistSection(model: model) {
+                // 菜单与设置共用模型，但模态窗口只由点击添加的界面承载。
+                ownsAppPicker = true
+                model.addWhitelistApp()
+            }
         }
     }
 }
@@ -625,6 +646,8 @@ struct MenuPanelHeader: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(status.summaryText)
                 Button("重新检查", action: recheckAction)
                     .buttonStyle(.bordered)
                     .tint(status.isProtecting ? MenuPanelStyle.accent : MenuPanelStyle.statusWarning)
@@ -665,47 +688,14 @@ struct MenuPanelSegmentedControl: View {
     @Binding var selectedTab: MenuPanelTab
 
     var body: some View {
-        HStack(spacing: MenuPanelStyle.segmentedSpacing) {
+        Picker("设置分类", selection: $selectedTab) {
             ForEach(MenuPanelTab.allCases) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    Text(tab.rawValue)
-                        .font(MenuPanelStyle.segmentedLabelFont)
-                        .foregroundStyle(textColor(for: tab))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, MenuPanelStyle.segmentedVerticalPadding)
-                        .background(tabBackground(for: tab))
-                }
-                .buttonStyle(.plain)
+                Text(tab.rawValue).tag(tab)
             }
         }
-        .padding(MenuPanelStyle.segmentedContainerPadding)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(MenuPanelStyle.controlFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
-        )
-    }
-}
-
-private extension MenuPanelSegmentedControl {
-    func textColor(for tab: MenuPanelTab) -> Color {
-        selectedTab == tab ? MenuPanelStyle.textPrimary : MenuPanelStyle.textSecondary
-    }
-
-    @ViewBuilder
-    func tabBackground(for tab: MenuPanelTab) -> some View {
-        if selectedTab == tab {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(MenuPanelStyle.selectedControlFill)
-        } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.clear)
-        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.large)
     }
 }
 

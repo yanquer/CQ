@@ -124,8 +124,13 @@ struct MenuSettingSliderRow: View {
                 Spacer()
                 MenuSettingValuePill(value: value)
             }
-            Slider(value: $value, in: QuitGuardSettings.supportedInterval, step: 1)
-                .tint(MenuPanelStyle.accent)
+            Slider(value: $value, in: QuitGuardSettings.supportedInterval, step: 1) {
+                Text(title)
+            }
+            .labelsHidden()
+            .tint(MenuPanelStyle.accent)
+            .accessibilityValue("\(Int(value)) 秒")
+            .accessibilityHint(subtitle)
         }
     }
 }
@@ -136,6 +141,8 @@ struct MenuSettingValuePill: View {
     var body: some View {
         Text("\(Int(value)) 秒")
             .font(MenuPanelStyle.valuePillFont)
+            .monospacedDigit()
+            .accessibilityHidden(true)
             .foregroundStyle(MenuPanelStyle.textPrimary)
             .padding(.horizontal, MenuPanelStyle.valuePillHorizontalPadding)
             .padding(.vertical, MenuPanelStyle.valuePillVerticalPadding)

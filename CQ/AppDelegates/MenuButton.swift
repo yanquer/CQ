@@ -64,8 +64,9 @@ private extension MenuPopoverController {
     func installClickMonitors() {
         guard localMonitor == nil, globalMonitor == nil else { return }
         // 同时监听应用内外点击，保证菜单弹层都能及时收起。
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: menuButtonEventMask) { [weak self] event in
-            self?.handleLocalClick(event) ?? event
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [menuButtonEventMask, .keyDown]) { [weak self] event in
+            guard let self else { return event }
+            return self.handleLocalEvent(event)
         }
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: menuButtonEventMask) { [weak self] _ in
             self?.handleGlobalClick()
@@ -83,7 +84,16 @@ private extension MenuPopoverController {
         }
     }
 
-    func handleLocalClick(_ event: NSEvent) -> NSEvent {
+    /// 处理弹层点击和 Escape，选择器打开时将键盘交给系统模态窗口。
+    func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown {
+            let window = popover.contentViewController?.view.window
+            if event.keyCode == 53, event.window === window, window?.attachedSheet == nil {
+                close()
+                return nil
+            }
+            return event
+        }
         if shouldClosePopover(at: screenPoint(for: event)) {
             close()
         }
@@ -97,7 +107,9 @@ private extension MenuPopoverController {
     }
 
     func shouldClosePopover(at point: NSPoint) -> Bool {
-        MenuPopoverInteraction.shouldClose(
+        // 系统选择器关闭前保留其父弹层，避免点击选择器时连带销毁父窗口。
+        guard popover.contentViewController?.view.window?.attachedSheet == nil else { return false }
+        return MenuPopoverInteraction.shouldClose(
             at: point,
             popoverFrame: popoverFrame,
             buttonFrame: buttonFrame
