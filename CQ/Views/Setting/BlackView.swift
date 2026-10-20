@@ -30,18 +30,18 @@ struct WhitelistSection: View {
                 }
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
                     MenuInlineActionButton(
-                        title: "添加应用",
-                        systemImage: "plus",
-                        kind: .secondary,
-                        isDisabled: false,
-                        action: model.addWhitelistApp
-                    )
-                    MenuInlineActionButton(
                         title: "移除所选",
                         systemImage: "minus",
-                        kind: .primary,
+                        kind: .secondary,
                         isDisabled: model.selectedWhitelistItem == nil,
                         action: model.removeSelectedWhitelistItem
+                    )
+                    MenuInlineActionButton(
+                        title: "添加应用",
+                        systemImage: "plus",
+                        kind: .primary,
+                        isDisabled: false,
+                        action: model.addWhitelistApp
                     )
                 }
             }
@@ -250,27 +250,16 @@ struct MenuAppPickerSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
-                    MenuInlineActionButton(
-                        title: "从 Finder 选择",
-                        systemImage: "folder",
-                        kind: .secondary,
-                        isDisabled: false,
-                        action: model.addWhitelistAppFromFinder
-                    )
-                    MenuInlineActionButton(
-                        title: "取消",
-                        systemImage: "xmark",
-                        kind: .secondary,
-                        isDisabled: false,
-                        action: model.dismissAppPicker
-                    )
-                    MenuInlineActionButton(
-                        title: "添加到白名单",
-                        systemImage: "checkmark",
-                        kind: .primary,
-                        isDisabled: !model.canConfirmAppPickerSelection,
-                        action: model.confirmAppPickerSelection
-                    )
+                    Button("浏览…", action: model.addWhitelistAppFromFinder)
+                        .buttonStyle(.borderless)
+                        .help("从 Finder 选择其他位置的应用")
+                    Spacer()
+                    Button("取消", action: model.dismissAppPicker)
+                        .buttonStyle(.bordered)
+                    Button("添加", action: model.confirmAppPickerSelection)
+                        .buttonStyle(.borderedProminent)
+                        .tint(MenuPanelStyle.accent)
+                        .disabled(!model.canConfirmAppPickerSelection)
                 }
             }
         }

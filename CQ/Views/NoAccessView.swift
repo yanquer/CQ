@@ -55,6 +55,7 @@ struct NoAccessView: View {
                     Button("请求事件监听权限", action: requestListenEventAccess)
                 }
                 Button("重启", action: restartAction)
+                    .buttonStyle(.bordered)
             }
             .buttonStyle(.borderedProminent)
         }

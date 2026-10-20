@@ -294,7 +294,7 @@ final class MenuPanelModel: ObservableObject {
         if hasActiveAppPickerSearch {
             return "共找到 \(appPickerItems.count) 个应用，当前匹配 \(filteredAppPickerItems.count) 个。"
         }
-        return "直接选择应用即可加入白名单，也可以切到 Finder 手动挑选。"
+        return "选中应用后点击“添加”，也可浏览其他位置。"
     }
 
     var canConfirmAppPickerSelection: Bool {
@@ -767,13 +767,16 @@ struct MenuActionBar: View {
                     .buttonStyle(.bordered)
                 }
             }
-            MenuInlineActionButton(
-                title: "退出",
-                systemImage: "power",
-                kind: .secondary,
-                isDisabled: false,
-                action: model.quitApp
-            )
+            HStack {
+                Text("退出 CQ 后将停止保护")
+                    .font(MenuPanelStyle.helperFont)
+                    .foregroundStyle(MenuPanelStyle.textSecondary)
+                Spacer()
+                Button("退出 CQ", action: model.quitApp)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(MenuPanelStyle.textSecondary)
+                    .help("关闭 CQ 并停止退出保护")
+            }
         }
         .padding(.top, 2)
     }
