@@ -106,22 +106,44 @@ extension QuitGuardAvailability {
 }
 
 extension QuitGuardRuntimeStatus {
-    /// 返回面向用户的真实保护状态，避免失效时仍声称正在保护。
-    var summaryText: String {
+    /// 仅在事件拦截实际可用时标记保护正常，供界面选择状态图标与颜色。
+    var isProtecting: Bool {
+        self == .ready
+    }
+
+    /// 返回独立的保护状态标题，让用户优先确认保护是否生效。
+    var headlineText: String {
         switch self {
         case .ready:
-            return "保护已启用 · 短按两次 Cmd+Q 确认退出"
-        case .missingPermissions(let permissions):
-            return "保护未启用 · 缺少" + permissions.map(\.title).joined(separator: "、")
-        case .tapCreateFailed:
-            return "保护未启用 · 启动失败，请重新检查"
+            return "保护已启用"
         case .tapDisabled:
-            return "保护已暂停 · 请重新检查"
+            return "保护已暂停"
+        default:
+            return "保护未启用"
+        }
+    }
+
+    /// 返回当前操作说明或失败原因，避免将异常混入其他设置摘要。
+    var detailText: String {
+        switch self {
+        case .ready:
+            return "短按两次 Cmd+Q 确认退出"
+        case .missingPermissions(let permissions):
+            return "缺少" + permissions.map(\.title).joined(separator: "、")
+        case .tapCreateFailed:
+            return "启动失败，请重新检查"
+        case .tapDisabled:
+            return "请重新检查以恢复退出保护"
         case .blockedByEnvironment(let reason):
             return reason == .invalidCodeSignature
-                ? "保护未启用 · 应用签名异常，请重新安装"
-                : "保护未启用 · 运行环境异常，请重新检查"
+                ? "应用签名异常，请重新安装"
+                : "运行环境异常，请重新检查"
         }
+    }
+
+    /// 组合状态与说明，供需要单行摘要的调用方使用。
+    var summaryText: String {
+        "\(headlineText) · \(detailText)"
     }
 
     /// 生成适合日志输出的运行状态文本。

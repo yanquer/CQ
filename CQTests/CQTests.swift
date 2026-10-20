@@ -1250,11 +1250,12 @@ final class CQTests: XCTestCase {
             runtimeStatus: .ready, runtimeUpdates: updates.eraseToAnyPublisher(),
             recheckProtectionAction: { recheckCount += 1 }
         )
-        XCTAssertTrue(model.summaryText.contains("保护已启用"))
+        XCTAssertTrue(model.runtimeStatus.isProtecting)
+        XCTAssertEqual(model.runtimeStatus.headlineText, "保护已启用")
         updates.send(.tapCreateFailed)
         waitForAsyncWork()
-        XCTAssertTrue(model.summaryText.contains("启动失败"))
-        XCTAssertFalse(model.summaryText.contains("保护已启用"))
+        XCTAssertTrue(model.runtimeStatus.detailText.contains("启动失败"))
+        XCTAssertFalse(model.runtimeStatus.isProtecting)
         model.recheckProtection()
         XCTAssertEqual(recheckCount, 1)
     }
@@ -1263,8 +1264,23 @@ final class CQTests: XCTestCase {
     func testMenuPanelKeepsFailureVisibleWithPendingSettings() {
         let model = makeMenuPanelModel(records: [])
         model.doubleTapIntervalDraft += 1
-        XCTAssertTrue(model.summaryText.contains("保护已暂停"))
-        XCTAssertTrue(model.summaryText.contains("未应用更改"))
+        XCTAssertEqual(model.runtimeStatus.headlineText, "保护已暂停")
+        XCTAssertTrue(model.settingsSummaryText.contains("未应用更改"))
+    }
+
+    /// 验证所有异常状态都有独立的原因说明，且不会误用正常保护样式。
+    func testProtectionPresentationDistinguishesFailureReasons() {
+        let cases: [(QuitGuardRuntimeStatus, String)] = [
+            (.missingPermissions([.accessibility]), "辅助功能"),
+            (.tapCreateFailed, "启动失败"),
+            (.tapDisabled, "恢复退出保护"),
+            (.blockedByEnvironment(.invalidCodeSignature), "签名异常")
+        ]
+        for (status, reason) in cases {
+            XCTAssertFalse(status.isProtecting)
+            XCTAssertTrue(status.detailText.contains(reason))
+            XCTAssertFalse(status.headlineText.contains("已启用"))
+        }
     }
 
     /// 验证旧 tap 失败不会阻止手动重新创建，恢复成功后更新菜单运行态。

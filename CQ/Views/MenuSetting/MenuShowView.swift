@@ -146,6 +146,8 @@ struct MenuPanelStyle {
     static let selectedControlFill = Color(red: 0.23, green: 0.32, blue: 0.51)
     static let accent = Color(red: 0.44, green: 0.63, blue: 0.95)
     static let accentSoft = Color(red: 0.27, green: 0.39, blue: 0.60)
+    static let statusHealthy = Color(red: 0.53, green: 0.83, blue: 0.67)
+    static let statusWarning = Color(red: 0.98, green: 0.75, blue: 0.43)
     static let textPrimary = Color(red: 0.96, green: 0.94, blue: 0.98)
     static let textSecondary = Color(red: 0.71, green: 0.69, blue: 0.76)
     static let textMuted = Color(red: 0.55, green: 0.53, blue: 0.61)
@@ -271,10 +273,11 @@ final class MenuPanelModel: ObservableObject {
         config.alertWindowCloseTime != alertCloseTimeDraft
     }
 
-    var summaryText: String {
+    /// 汇总次要设置状态，保护状态由页头单独展示。
+    var settingsSummaryText: String {
         let suffix = whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
         let pending = hasPendingChanges ? " · 有未应用更改" : ""
-        return "\(runtimeStatus.summaryText) · \(suffix)\(pending)"
+        return "\(suffix)\(pending)"
     }
 
     var whitelistSubtitleText: String {
@@ -569,7 +572,8 @@ private extension MenuPanelScreen {
         VStack(alignment: .leading, spacing: MenuPanelStyle.sectionSpacing) {
             MenuPanelHeader(
                 title: "CQ",
-                subtitle: model.summaryText,
+                status: model.runtimeStatus,
+                subtitle: model.settingsSummaryText,
                 recheckAction: model.recheckProtection
             )
             MenuPanelSegmentedControl(selectedTab: $model.selectedTab)
@@ -607,6 +611,7 @@ struct MenuPanelContentViewport<Content: View>: View {
 
 struct MenuPanelHeader: View {
     let title: String
+    let status: QuitGuardRuntimeStatus
     let subtitle: String
     let recheckAction: () -> Void
 
@@ -619,14 +624,29 @@ struct MenuPanelHeader: View {
                     .foregroundStyle(MenuPanelStyle.textPrimary)
                     .layoutPriority(1)
                 Spacer()
+            }
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(
+                        status.headlineText,
+                        systemImage: status.isProtecting ? "checkmark.shield.fill" : "exclamationmark.shield.fill"
+                    )
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(status.isProtecting ? MenuPanelStyle.statusHealthy : MenuPanelStyle.statusWarning)
+                    Text(status.detailText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(MenuPanelStyle.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Button("重新检查", action: recheckAction)
                     .buttonStyle(.bordered)
+                    .tint(status.isProtecting ? MenuPanelStyle.accent : MenuPanelStyle.statusWarning)
                     .help("检查权限并恢复退出保护")
             }
             Text(subtitle)
                 .font(MenuPanelStyle.headerSubtitleFont)
                 .foregroundStyle(MenuPanelStyle.textSecondary)
-                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
