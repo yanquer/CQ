@@ -67,7 +67,7 @@ private extension WhitelistSection {
             )
         } else {
             MenuListViewport {
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical) {
                     LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
                         ForEach(model.filteredWhitelistItems, id: \.self) { item in
                             MenuWhitelistRow(
@@ -142,14 +142,6 @@ struct MenuListViewport<Content: View>: View {
         content
             .frame(height: MenuPanelStyle.whitelistViewportHeight)
             .padding(MenuPanelStyle.whitelistListPadding)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
-            )
     }
 }
 
@@ -173,7 +165,9 @@ struct MenuWhitelistRow: View {
                     Text(path)
                         .font(MenuPanelStyle.whitelistRowPathFont)
                         .foregroundStyle(MenuPanelStyle.textMuted)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(path)
                 }
                 Spacer()
                 if isSelected {
@@ -312,7 +306,7 @@ private extension MenuAppPickerSheet {
             )
         } else {
             MenuListViewport {
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical) {
                     LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
                         ForEach(model.filteredAppPickerItems) { item in
                             MenuWhitelistRow(
@@ -359,14 +353,6 @@ struct MenuWhitelistEmptyState: View {
         }
         .frame(maxWidth: .infinity, minHeight: MenuPanelStyle.whitelistViewportHeight)
         .padding(.horizontal, MenuPanelStyle.emptyStateHorizontalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
-        )
     }
 }
 

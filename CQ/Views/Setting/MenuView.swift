@@ -21,7 +21,7 @@ struct GeneralSettingsSection: View {
                 VStack(alignment: .leading, spacing: 8) {
                     MenuSettingToggleRow(
                         title: "登录时启动",
-                        subtitle: "打开电脑后自动进入菜单栏，减少手动启动。",
+                        subtitle: "启动后常驻菜单栏。",
                         isOn: Binding(
                             get: { model.startAtLogin },
                             set: model.toggleLaunchAtLogin
@@ -46,13 +46,13 @@ struct GeneralSettingsSection: View {
             ) {
                 VStack(spacing: MenuPanelStyle.settingGroupSpacing) {
                     MenuSettingSliderRow(
-                        title: "CMD+Q 最长间隔时间",
-                        subtitle: "两次按键在这个时长内会被视为确认退出。",
+                        title: "再次按键时限",
+                        subtitle: "在此时间内再按 Cmd+Q 即可退出。",
                         value: $model.doubleTapIntervalDraft
                     )
                     MenuSettingSliderRow(
-                        title: "提示窗口关闭时间",
-                        subtitle: "提示浮层的停留时间，适合按自己的节奏调整。",
+                        title: "提示停留时间",
+                        subtitle: "只影响提示显示，不改变确认时限。",
                         value: $model.alertCloseTimeDraft
                     )
                     HStack(spacing: 12) {

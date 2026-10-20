@@ -75,16 +75,15 @@ struct MenuPanelStyle {
     static let whitelistViewportHeight: CGFloat = 220
     static let popoverOuterPadding: CGFloat = 16
     static let expandedOuterPadding: CGFloat = 20
-    static let chromePadding: CGFloat = 8
-    static let cornerRadius: CGFloat = 26
-    static let cardCornerRadius: CGFloat = 20
+    static let cornerRadius: CGFloat = 18
+    static let cardCornerRadius: CGFloat = 16
     static let sectionSpacing: CGFloat = 12
     static let cardSpacing: CGFloat = 12
     static let cardPadding: CGFloat = 14
     static let textStackSpacing: CGFloat = 4
     static let headerSpacing: CGFloat = 8
     static let headerTitleRowSpacing: CGFloat = 12
-    static let headerIconSize: CGFloat = 48
+    static let headerIconSize: CGFloat = 32
     static let segmentedSpacing: CGFloat = 8
     static let segmentedContainerPadding: CGFloat = 6
     static let segmentedVerticalPadding: CGFloat = 8
@@ -102,7 +101,7 @@ struct MenuPanelStyle {
     static let whitelistSearchHorizontalPadding: CGFloat = 12
     static let whitelistSearchVerticalPadding: CGFloat = 10
     static let whitelistListSpacing: CGFloat = 10
-    static let whitelistListPadding: CGFloat = 8
+    static let whitelistListPadding: CGFloat = 4
     static let whitelistButtonSpacing: CGFloat = 10
     static let whitelistRowSpacing: CGFloat = 12
     static let whitelistRowPadding: CGFloat = 10
@@ -110,20 +109,20 @@ struct MenuPanelStyle {
     static let whitelistSearchIconFont: Font = .system(size: 12, weight: .semibold)
     static let emptyStateSpacing: CGFloat = 10
     static let emptyStateHorizontalPadding: CGFloat = 18
-    static let headerTitleFont: Font = .system(size: 22, weight: .bold, design: .rounded)
-    static let headerSubtitleFont: Font = .system(size: 10, weight: .medium)
+    static let headerTitleFont: Font = .system(size: 18, weight: .bold, design: .rounded)
+    static let headerSubtitleFont: Font = .system(size: 11)
     static let segmentedLabelFont: Font = .system(size: 12, weight: .semibold)
     static let cardTitleFont: Font = .system(size: 14, weight: .semibold)
-    static let helperFont: Font = .system(size: 10, weight: .medium)
+    static let helperFont: Font = .system(size: 11)
     static let settingTitleFont: Font = .system(size: 13, weight: .semibold)
-    static let valuePillFont: Font = .system(size: 10, weight: .semibold)
+    static let valuePillFont: Font = .system(size: 11, weight: .semibold)
     static let actionButtonFont: Font = .system(size: 12, weight: .semibold)
     static let whitelistRowTitleFont: Font = .system(size: 13, weight: .semibold)
-    static let whitelistRowPathFont: Font = .system(size: 10, weight: .medium)
+    static let whitelistRowPathFont: Font = .system(size: 11)
     static let whitelistIconFont: Font = .system(size: 16, weight: .semibold)
     static let whitelistEmptyIconFont: Font = .system(size: 28, weight: .semibold)
     static let whitelistEmptyTitleFont: Font = .system(size: 14, weight: .semibold)
-    static let whitelistEmptySubtitleFont: Font = .system(size: 10, weight: .medium)
+    static let whitelistEmptySubtitleFont: Font = .system(size: 11)
     static let panelBackground = LinearGradient(
         colors: [
             Color(red: 0.23, green: 0.13, blue: 0.17),
@@ -150,7 +149,7 @@ struct MenuPanelStyle {
     static let statusWarning = Color(red: 0.98, green: 0.75, blue: 0.43)
     static let textPrimary = Color(red: 0.96, green: 0.94, blue: 0.98)
     static let textSecondary = Color(red: 0.71, green: 0.69, blue: 0.76)
-    static let textMuted = Color(red: 0.55, green: 0.53, blue: 0.61)
+    static let textMuted = Color(red: 0.72, green: 0.70, blue: 0.78)
     static let divider = Color.white.opacity(0.08)
     static let shadow = Color.black.opacity(0.34)
     static let primaryButton = LinearGradient(
@@ -536,36 +535,17 @@ struct MenuPanelScreen: View {
         ZStack {
             MenuPanelStyle.panelBackground
                 .ignoresSafeArea()
-
-            RoundedRectangle(cornerRadius: MenuPanelStyle.cornerRadius, style: .continuous)
-                .fill(MenuPanelStyle.chromeFill)
-                .overlay(cardStroke)
-                .shadow(color: MenuPanelStyle.shadow, radius: 24, x: 0, y: 18)
-                .overlay(alignment: .topLeading) {
-                    content
-                        .frame(
-                            maxWidth: .infinity,
-                            maxHeight: .infinity,
-                            alignment: .topLeading
-                        )
-                        .padding(size.outerPadding)
-                }
-                .overlay {
-                    MenuAppPickerOverlay(model: model)
-                }
-                .padding(MenuPanelStyle.chromePadding)
+            content
+                .padding(size.outerPadding)
+            MenuAppPickerOverlay(model: model)
         }
         .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: MenuPanelStyle.cornerRadius, style: .continuous))
         .preferredColorScheme(.dark)
     }
 }
 
 private extension MenuPanelScreen {
-    var cardStroke: some View {
-        RoundedRectangle(cornerRadius: MenuPanelStyle.cornerRadius, style: .continuous)
-            .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
-    }
-
     var content: some View {
         VStack(alignment: .leading, spacing: MenuPanelStyle.sectionSpacing) {
             MenuPanelHeader(
@@ -601,8 +581,11 @@ struct MenuPanelContentViewport<Content: View>: View {
     }
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        ScrollView(.vertical) {
+            content
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -617,10 +600,15 @@ struct MenuPanelHeader: View {
         VStack(alignment: .leading, spacing: MenuPanelStyle.headerSpacing) {
             HStack(alignment: .center, spacing: MenuPanelStyle.headerTitleRowSpacing) {
                 appIcon
-                Text(title)
-                    .font(MenuPanelStyle.headerTitleFont)
-                    .foregroundStyle(MenuPanelStyle.textPrimary)
-                    .layoutPriority(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(MenuPanelStyle.headerTitleFont)
+                        .foregroundStyle(MenuPanelStyle.textPrimary)
+                    Text(subtitle)
+                        .font(MenuPanelStyle.headerSubtitleFont)
+                        .foregroundStyle(MenuPanelStyle.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer()
             }
             HStack(alignment: .top, spacing: 12) {
@@ -642,11 +630,6 @@ struct MenuPanelHeader: View {
                     .tint(status.isProtecting ? MenuPanelStyle.accent : MenuPanelStyle.statusWarning)
                     .help("检查权限并恢复退出保护")
             }
-            Text(subtitle)
-                .font(MenuPanelStyle.headerSubtitleFont)
-                .foregroundStyle(MenuPanelStyle.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -654,7 +637,7 @@ struct MenuPanelHeader: View {
 private extension MenuPanelHeader {
     var appIcon: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -668,11 +651,11 @@ private extension MenuPanelHeader {
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable()
                 .scaledToFit()
-                .padding(8)
+                .padding(4)
         }
         .frame(width: MenuPanelStyle.headerIconSize, height: MenuPanelStyle.headerIconSize)
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(MenuPanelStyle.cardOverlay, lineWidth: 1)
         )
     }
