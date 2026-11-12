@@ -14,6 +14,48 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证保存前发出标准变更通知，写入后保存状态立即恢复。
+    func testApplyingSettingsPublishesStateChange() {
+        let model = makeMenuPanelModel(records: [])
+        model.doubleTapIntervalDraft = 6
+        model.alertCloseTimeDraft = 5
+        var pendingStates: [Bool] = []
+        let subscription = model.objectWillChange.sink { pendingStates.append(model.hasPendingChanges) }
+        model.applySettings()
+        XCTAssertEqual(pendingStates, [true])
+        XCTAssertFalse(model.hasPendingChanges)
+        withExtendedLifetime(subscription) {}
+    }
+
+    /// 对照保存前后离屏图像，验证两个宿主的通用页面及白名单未保存提醒同步刷新。
+    @MainActor
+    func testApplyingSettingsRefreshesSharedHiddenWindows() throws {
+        let model = makeMenuPanelModel(records: [])
+        let popoverWindow = makeMenuTestWindow(MenuPanelScreen(model: model, size: .popover))
+        let settingsWindow = makeMenuTestWindow(SettingView(model: model))
+        let windows = [popoverWindow, settingsWindow]
+        defer { windows.forEach { $0.close() } }
+        for (index, tab) in MenuPanelTab.allCases.enumerated() {
+            model.selectedTab = tab
+            model.doubleTapIntervalDraft = Double(6 + index)
+            waitForAsyncWork()
+            let before = try windows.map(menuTestImageData)
+            model.applySettings()
+            waitForAsyncWork()
+            let after = try windows.map(menuTestImageData)
+            XCTAssertFalse(model.hasPendingChanges)
+            // 额外无关通知后的图像应与保存后相同，不能依赖后续交互才刷新保存状态。
+            model.selectedWhitelistItem = nil
+            waitForAsyncWork()
+            let refreshed = try windows.map(menuTestImageData)
+            for index in windows.indices {
+                XCTAssertNotEqual(before[index], after[index])
+                XCTAssertEqual(after[index], refreshed[index])
+                XCTAssertFalse(windows[index].isVisible)
+            }
+        }
+    }
+
     /// 验证提示跟随目标窗口，覆盖左右、上下、负坐标排列及跨屏窗口。
     func testTipScreenPlacementPrefersTargetWindow() {
         let primary = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -2357,6 +2399,16 @@ final class CQTests: XCTestCase {
 }
 
 private extension CQTests {
+    /// 将指定隐藏窗口的实际内容绘制为 PNG 数据，用于界面状态对照。
+    @MainActor
+    func menuTestImageData(_ window: NSWindow) throws -> Data {
+        let view = try XCTUnwrap(window.contentView)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    }
+
     /// 将实际样式颜色转为 sRGB，并按 WCAG 公式计算相对亮度。
     @MainActor
     func relativeLuminance(_ color: Color) throws -> Double {

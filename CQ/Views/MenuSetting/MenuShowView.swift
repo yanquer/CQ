@@ -330,7 +330,9 @@ final class MenuPanelModel: ObservableObject {
         autoLaunchError = nil
     }
 
+    /// 保存时间草稿，并通知菜单及设置窗口重新计算保存状态。
     func applySettings() {
+        objectWillChange.send()
         config.doubleTapInterval = doubleTapIntervalDraft
         config.alertWindowCloseTime = alertCloseTimeDraft
     }
