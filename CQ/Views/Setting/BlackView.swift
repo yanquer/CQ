@@ -96,16 +96,19 @@ struct MenuWhitelistSearchField: View {
     @FocusState private var isFocused: Bool
     let placeholder: String
     let focusesOnAppear: Bool
+    let moveSelection: ((Int) -> Void)?
 
     /// 创建带清空操作的搜索框，并允许应用选择器打开时自动聚焦。
     init(
         text: Binding<String>,
         placeholder: String = "搜索应用名或路径",
-        focusesOnAppear: Bool = false
+        focusesOnAppear: Bool = false,
+        moveSelection: ((Int) -> Void)? = nil
     ) {
         self._text = text
         self.placeholder = placeholder
         self.focusesOnAppear = focusesOnAppear
+        self.moveSelection = moveSelection
     }
 
     var body: some View {
@@ -118,6 +121,16 @@ struct MenuWhitelistSearchField: View {
                 .foregroundStyle(MenuPanelStyle.textPrimary)
                 .focused($isFocused)
                 .accessibilityLabel(placeholder)
+                .onKeyPress(.downArrow) {
+                    guard let moveSelection else { return .ignored }
+                    moveSelection(1)
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    guard let moveSelection else { return .ignored }
+                    moveSelection(-1)
+                    return .handled
+                }
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -239,7 +252,8 @@ struct MenuAppPickerSheet: View {
                 MenuWhitelistSearchField(
                     text: $model.appPickerSearchText,
                     placeholder: "搜索应用名或路径",
-                    focusesOnAppear: true
+                    focusesOnAppear: true,
+                    moveSelection: model.moveAppPickerSelection
                 )
                 .onSubmit(model.confirmAppPickerSelection)
                 listContent
@@ -299,16 +313,21 @@ private extension MenuAppPickerSheet {
             )
         } else {
             MenuListViewport {
-                ScrollView(.vertical) {
-                    LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
-                        ForEach(model.filteredAppPickerItems) { item in
-                            MenuWhitelistRow(
-                                path: item.path,
-                                isSelected: model.selectedAppPickerItem == item
-                            ) {
-                                model.selectAppPickerItem(item)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
+                            ForEach(model.filteredAppPickerItems) { item in
+                                MenuWhitelistRow(
+                                    path: item.path,
+                                    isSelected: model.selectedAppPickerItem == item
+                                ) {
+                                    model.selectAppPickerItem(item)
+                                }
                             }
                         }
+                    }
+                    .onChange(of: model.selectedAppPickerItem) { _, item in
+                        if let item { proxy.scrollTo(item.id) }
                     }
                 }
             }

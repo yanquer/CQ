@@ -14,6 +14,57 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证方向键仅在当前结果中移动，处理首尾边界、过滤后清空选择与无结果。
+    func testAppPickerKeyboardSelectionTracksFilteredResults() {
+        let first = makeAppPickerItem("/Applications/A.app")
+        let last = makeAppPickerItem("/Applications/B.app")
+        let model = makeMenuPanelModel(records: [], appCatalog: AppCatalogSpy(items: [first, last]))
+        model.addWhitelistApp()
+        model.moveAppPickerSelection(by: 1)
+        XCTAssertNil(model.selectedAppPickerItem)
+        waitForAsyncWork()
+        model.moveAppPickerSelection(by: 1)
+        XCTAssertEqual(model.selectedAppPickerItem, first)
+        model.moveAppPickerSelection(by: -1)
+        XCTAssertEqual(model.selectedAppPickerItem, first)
+        model.moveAppPickerSelection(by: 1)
+        model.moveAppPickerSelection(by: 1)
+        XCTAssertEqual(model.selectedAppPickerItem, last)
+        model.appPickerSearchText = "A.app"
+        XCTAssertNil(model.selectedAppPickerItem)
+        model.moveAppPickerSelection(by: -1)
+        XCTAssertEqual(model.selectedAppPickerItem, first)
+        model.appPickerSearchText = "no-match"
+        model.moveAppPickerSelection(by: 1)
+        XCTAssertNil(model.selectedAppPickerItem)
+    }
+
+    /// 向隐藏窗口定向发送真实按键，验证搜索框的方向键选择和 Return 添加、Escape 取消。
+    @MainActor
+    func testAppPickerKeyboardSelectionInHiddenWindow() throws {
+        let item = makeAppPickerItem("/Applications/Example.app")
+        let list = makeBlackList()
+        let model = makeMenuPanelModel(records: [], blackList: list, appCatalog: AppCatalogSpy(items: [item]))
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.appPickerSearchText = "Example"
+        let window = makeMenuTestWindow(MenuAppPickerSheet(model: model).padding(16).frame(width: 416))
+        defer { window.close(); model.dismissAppPicker() }
+        XCTAssertFalse(window.isVisible)
+        XCTAssertTrue(window.firstResponder is NSTextView)
+        sendMenuTestKey(to: window, code: 125, characters: "\u{F701}")
+        XCTAssertEqual(model.selectedAppPickerItem, item)
+        sendMenuTestKey(to: window, code: 36, characters: "\r")
+        XCTAssertEqual(list.records, [item.path])
+        XCTAssertFalse(model.isShowingAppPicker)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        sendMenuTestKey(to: window, code: 53, characters: "\u{1b}")
+        XCTAssertFalse(model.isShowingAppPicker)
+        XCTAssertEqual(list.records, [item.path])
+        XCTAssertFalse(window.isVisible)
+    }
+
     /// 验证真实渲染的滑块、清空搜索和已选应用能向辅助功能提供可理解的名称与状态。
     @MainActor
     func testMenuControlsExposeAccessibleNamesAndSelection() {

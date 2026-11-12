@@ -346,6 +346,15 @@ final class MenuPanelModel: ObservableObject {
         selectedAppPickerItem = item
     }
 
+    /// 在当前搜索结果中按方向移动选择，边界保持选中项并供 Return 确认。
+    func moveAppPickerSelection(by offset: Int) {
+        guard !isLoadingAppPicker, !filteredAppPickerItems.isEmpty else { return }
+        let currentIndex = selectedAppPickerItem.flatMap { filteredAppPickerItems.firstIndex(of: $0) }
+        let nextIndex = currentIndex.map { $0 + offset } ?? (offset > 0 ? 0 : filteredAppPickerItems.count - 1)
+        let index = min(max(nextIndex, 0), filteredAppPickerItems.count - 1)
+        selectedAppPickerItem = filteredAppPickerItems[index]
+    }
+
     /// 保存成功后关闭选择层，失败时保留选择并展示可重试的错误。
     func confirmAppPickerSelection() {
         guard canConfirmAppPickerSelection else { return }
