@@ -14,6 +14,16 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证主按钮渐变各端点与小字号文字满足至少 4.5 比 1 的对比度。
+    @MainActor
+    func testPrimaryButtonTextContrast() throws {
+        let text = try relativeLuminance(MenuPanelStyle.textPrimary)
+        for color in [MenuPanelStyle.primaryButtonStartColor, MenuPanelStyle.primaryButtonEndColor] {
+            let background = try relativeLuminance(color)
+            XCTAssertGreaterThanOrEqual((text + 0.05) / (background + 0.05), 4.5)
+        }
+    }
+
     /// 验证显示名称贯通选择器、白名单与搜索，同名应用仍以路径区分。
     func testApplicationDisplayNamesAreSharedByPickerAndWhitelist() throws {
         let root = makeTempDirectoryURL()
@@ -2308,6 +2318,16 @@ final class CQTests: XCTestCase {
 }
 
 private extension CQTests {
+    /// 将实际样式颜色转为 sRGB，并按 WCAG 公式计算相对亮度。
+    @MainActor
+    func relativeLuminance(_ color: Color) throws -> Double {
+        let rgb = try XCTUnwrap(NSColor(color).usingColorSpace(.sRGB))
+        let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map { value in
+            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+    }
+
     /// 使用隔离模型创建真实宿主窗口，不启动退出拦截、不读写用户配置。
     @MainActor
     func makeMenuTestWindow<Content: View>(_ content: Content) -> NSWindow {

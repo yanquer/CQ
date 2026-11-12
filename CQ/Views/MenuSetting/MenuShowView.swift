@@ -148,10 +148,12 @@ struct MenuPanelStyle {
     static let textMuted = Color(red: 0.72, green: 0.70, blue: 0.78)
     static let divider = Color.white.opacity(0.08)
     static let shadow = Color.black.opacity(0.34)
+    static let primaryButtonStartColor = Color(red: 0.24, green: 0.40, blue: 0.72)
+    static let primaryButtonEndColor = Color(red: 0.22, green: 0.35, blue: 0.64)
     static let primaryButton = LinearGradient(
         colors: [
-            Color(red: 0.39, green: 0.59, blue: 0.95),
-            Color(red: 0.31, green: 0.47, blue: 0.86)
+            primaryButtonStartColor,
+            primaryButtonEndColor
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
