@@ -14,6 +14,51 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证显示名称贯通选择器、白名单与搜索，同名应用仍以路径区分。
+    func testApplicationDisplayNamesAreSharedByPickerAndWhitelist() throws {
+        let root = makeTempDirectoryURL()
+        let first = root.appendingPathComponent("EnglishName.app")
+        let second = root.appendingPathComponent("OtherName.app")
+        try createAppBundle(at: first, displayName: "示例工具")
+        try createAppBundle(at: second, displayName: "示例工具")
+        let catalog = InstalledAppCatalog(appDirectories: [root.path])
+        let result = catalog.loadApps(refresh: true)
+        XCTAssertEqual(result.items.map(\.name), ["示例工具", "示例工具"])
+        XCTAssertEqual(Set(result.items.map(\.id)).count, 2)
+        let model = makeMenuPanelModel(records: [first.path], appCatalog: catalog)
+        XCTAssertEqual(model.whitelistAppName(for: first.path), "示例工具")
+        model.whitelistSearchText = "示例"
+        XCTAssertEqual(model.filteredWhitelistItems, [first.path])
+        model.whitelistSearchText = "EnglishName"
+        XCTAssertEqual(model.filteredWhitelistItems, [first.path])
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        model.appPickerSearchText = "示例工具"
+        XCTAssertEqual(model.filteredAppPickerItems.count, 2)
+        model.appPickerSearchText = "EnglishName"
+        XCTAssertEqual(model.filteredAppPickerItems.count, 1)
+        model.dismissAppPicker()
+    }
+
+    /// 验证显示名称读取 InfoPlist 本地化资源，并兼容包名称、缺失及空白显示名称。
+    func testApplicationDisplayNameLocalizationAndFallbacks() throws {
+        let root = makeTempDirectoryURL()
+        let localized = root.appendingPathComponent("Localized.app")
+        try createAppBundle(at: localized, displayName: "Original")
+        let plistURL = localized.appendingPathComponent("Contents/Info.plist")
+        var plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: plistURL), format: nil) as? [String: Any])
+        plist["CFBundleDevelopmentRegion"] = "zh-Hans"
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: plistURL)
+        let resources = localized.appendingPathComponent("Contents/Resources/zh-Hans.lproj")
+        try createDirectories([resources])
+        try "\"CFBundleDisplayName\" = \"本地化工具\";".write(to: resources.appendingPathComponent("InfoPlist.strings"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(AppPickerItem(url: localized).name, "本地化工具")
+        let fallback = root.appendingPathComponent("Fallback.app")
+        try createAppBundle(at: fallback, displayName: "  ", bundleName: "备用名称")
+        XCTAssertEqual(AppPickerItem(url: fallback).name, "备用名称")
+        XCTAssertEqual(AppPickerItem(url: root.appendingPathComponent("Deleted.app")).name, "Deleted")
+    }
+
     /// 验证不可读目录保留原始错误，并在恢复访问权限后通过界面重试加载。
     func testAppCatalogFailureAndRetryRecovery() throws {
         let root = makeTempDirectoryURL()
@@ -2405,11 +2450,23 @@ private extension CQTests {
         }
     }
 
-    func createAppBundle(at url: URL) throws {
+    /// 创建隔离应用目录，按需提供名称元数据以验证展示和本地化。
+    func createAppBundle(at url: URL, displayName: String? = nil, bundleName: String? = nil) throws {
         try FileManager.default.createDirectory(
             at: url,
             withIntermediateDirectories: true
         )
+        guard displayName != nil || bundleName != nil else { return }
+        let contents = url.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        var plist: [String: Any] = [
+            "CFBundleIdentifier": "CQTests." + UUID().uuidString,
+            "CFBundlePackageType": "APPL"
+        ]
+        plist["CFBundleDisplayName"] = displayName
+        plist["CFBundleName"] = bundleName
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
     }
 
     func makeAppPickerItem(_ path: String) -> AppPickerItem {

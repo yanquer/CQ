@@ -205,6 +205,7 @@ final class MenuPanelModel: ObservableObject {
     private var appPickerRequestID: UUID?
     private var appPickerLoadWorkItem: DispatchWorkItem?
     private var shouldOpenFinderAfterDismissal: Bool = false
+    private var whitelistAppNames: [String: String] = [:]
 
     /// 初始化面板配置、运行状态订阅及用户操作回调。
     init(
@@ -241,6 +242,9 @@ final class MenuPanelModel: ObservableObject {
         self.filteredWhitelistItems = blackList.records
         self.appPickerItems = []
         self.filteredAppPickerItems = []
+        self.whitelistAppNames = Dictionary(uniqueKeysWithValues: blackList.records.map { path in
+            (path, AppPickerItem(url: URL(fileURLWithPath: path)).name)
+        })
         bindWhitelist()
         runtimeUpdates?
             .receive(on: RunLoop.main)
@@ -331,6 +335,11 @@ final class MenuPanelModel: ObservableObject {
 
     func selectWhitelistItem(_ item: String?) {
         selectedWhitelistItem = item
+    }
+
+    /// 列表展示和搜索共用缓存名称，避免 SwiftUI 行重绘时反复读取应用元数据。
+    func whitelistAppName(for path: String) -> String {
+        whitelistAppNames[path] ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
     }
 
     func addWhitelistApp() {
@@ -434,7 +443,12 @@ private extension MenuPanelModel {
             .store(in: &cancellables)
     }
 
+    /// 仅为新路径解析显示名称，沿用已读取的名称并移除失效缓存。
     func syncWhitelist(_ records: [String]) {
+        let previousNames = whitelistAppNames
+        whitelistAppNames = Dictionary(uniqueKeysWithValues: records.map { path in
+            (path, previousNames[path] ?? AppPickerItem(url: URL(fileURLWithPath: path)).name)
+        })
         whitelistItems = records
         refreshFilteredWhitelistItems()
     }
@@ -461,7 +475,9 @@ private extension MenuPanelModel {
     func makeFilteredWhitelistItems() -> [String] {
         let query = normalizedWhitelistSearchText
         guard !query.isEmpty else { return whitelistItems }
-        return whitelistItems.filter { matchesAppSearch(path: $0, query: query) }
+        return whitelistItems.filter {
+            matchesAppSearch(name: whitelistAppName(for: $0), path: $0, query: query)
+        }
     }
 
     /// 每次打开选择层时在后台刷新目录，避免新安装或卸载的应用被旧缓存掩盖。
@@ -534,11 +550,6 @@ private extension MenuPanelModel {
 
     func matchesAppSearch(item: AppPickerItem, query: String) -> Bool {
         matchesAppSearch(name: item.name, path: item.path, query: query)
-    }
-
-    func matchesAppSearch(path: String, query: String) -> Bool {
-        let name = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-        return matchesAppSearch(name: name, path: path, query: query)
     }
 
     func matchesAppSearch(name: String, path: String, query: String) -> Bool {

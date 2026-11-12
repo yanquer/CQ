@@ -78,6 +78,7 @@ private extension WhitelistSection {
                     LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
                         ForEach(model.filteredWhitelistItems, id: \.self) { item in
                             MenuWhitelistRow(
+                                name: model.whitelistAppName(for: item),
                                 path: item,
                                 isSelected: model.selectedWhitelistItem == item
                             ) {
@@ -178,6 +179,7 @@ struct MenuListViewport<Content: View>: View {
 }
 
 struct MenuWhitelistRow: View {
+    let name: String
     let path: String
     let isSelected: Bool
     let action: () -> Void
@@ -190,7 +192,7 @@ struct MenuWhitelistRow: View {
                     .frame(width: MenuPanelStyle.whitelistIconSize, height: MenuPanelStyle.whitelistIconSize)
                     .overlay(icon)
                 VStack(alignment: .leading, spacing: MenuPanelStyle.textStackSpacing) {
-                    Text(appName)
+                    Text(name)
                         .font(MenuPanelStyle.whitelistRowTitleFont)
                         .foregroundStyle(MenuPanelStyle.textPrimary)
                         .lineLimit(1)
@@ -211,19 +213,15 @@ struct MenuWhitelistRow: View {
             .background(rowBackground)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(appName)
+        .accessibilityLabel(name)
         .accessibilityValue(isSelected ? "已选中" : "未选中")
         .accessibilityHint(path)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .help(path)
+        .help("\(name)\n\(path)")
     }
 }
 
 private extension MenuWhitelistRow {
-    var appName: String {
-        URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-    }
-
     var icon: some View {
         Image(systemName: "app.fill")
             .font(MenuPanelStyle.whitelistIconFont)
@@ -328,6 +326,7 @@ private extension MenuAppPickerSheet {
                         LazyVStack(spacing: MenuPanelStyle.whitelistListSpacing) {
                             ForEach(model.filteredAppPickerItems) { item in
                                 MenuWhitelistRow(
+                                    name: item.name,
                                     path: item.path,
                                     isSelected: model.selectedAppPickerItem == item
                                 ) {

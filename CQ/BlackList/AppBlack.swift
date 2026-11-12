@@ -12,13 +12,27 @@ struct AppPickerItem: Identifiable, Equatable {
     let name: String
     let path: String
 
+    /// 读取应用的本地化显示名称，并保留路径作为稳定身份与搜索依据。
     init(url: URL) {
-        self.name = url.deletingPathExtension().lastPathComponent
+        self.name = Self.displayName(for: url)
         self.path = url.path
     }
 
     var id: String {
         path
+    }
+
+    /// 优先使用本地化包名称，缺失时回退到 Finder 名称及应用文件名。
+    private static func displayName(for url: URL) -> String {
+        let bundle = Bundle(url: url)
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            if let name = bundle?.object(forInfoDictionaryKey: key) as? String,
+               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return name
+            }
+        }
+        let filename = FileManager.default.displayName(atPath: url.path)
+        return filename.lowercased().hasSuffix(".app") ? String(filename.dropLast(4)) : filename
     }
 }
 
