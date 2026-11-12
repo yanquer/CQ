@@ -16,6 +16,84 @@ private final class TipPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// 根据按键目标窗口的实际覆盖区域选择提示屏幕，窗口不可读时才使用鼠标位置。
+enum TipScreenPlacement {
+    /// 优先选择窗口覆盖面积最大的屏幕，空结果依次回退到鼠标所在屏幕与主屏幕。
+    static func screenIndex(windowFrame: CGRect?, screenFrames: [CGRect], mouseLocation: CGPoint) -> Int? {
+        var bestIndex: Int?
+        var bestArea: CGFloat = 0
+        if let windowFrame, !windowFrame.isNull, !windowFrame.isInfinite {
+            for (index, frame) in screenFrames.enumerated() {
+                let intersection = frame.intersection(windowFrame)
+                guard !intersection.isNull else { continue }
+                let area = intersection.width * intersection.height
+                if area > bestArea {
+                    bestIndex = index
+                    bestArea = area
+                }
+            }
+        }
+        return bestIndex ?? screenFrames.firstIndex { $0.contains(mouseLocation) } ?? screenFrames.indices.first
+    }
+
+    /// 将辅助功能使用的左上原点坐标转为 AppKit 屏幕坐标，兼容上下排列及负坐标屏幕。
+    static func appKitFrame(from accessibilityFrame: CGRect, primaryScreenTop: CGFloat) -> CGRect {
+        CGRect(
+            x: accessibilityFrame.minX,
+            y: primaryScreenTop - accessibilityFrame.maxY,
+            width: accessibilityFrame.width,
+            height: accessibilityFrame.height
+        )
+    }
+
+    /// 有界查询指定进程的焦点窗口，读取失败保留原始 AX 状态码供排查回退原因。
+    static func focusedWindowFrame(processIdentifier: pid_t, primaryScreenTop: CGFloat) -> CGRect? {
+        let application = AXUIElementCreateApplication(processIdentifier)
+        let timeoutStatus = AXUIElementSetMessagingTimeout(application, 0.05)
+        guard timeoutStatus == .success else {
+            AppLog.error("Tip screen lookup failed: pid=\(processIdentifier), stage=applicationTimeout, axStatus=\(timeoutStatus.rawValue)")
+            return nil
+        }
+        var rawWindow: CFTypeRef?
+        let windowStatus = AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &rawWindow)
+        guard windowStatus == .success, let rawWindow, CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else {
+            let message = "Tip screen lookup unavailable: pid=\(processIdentifier), stage=focusedWindow, axStatus=\(windowStatus.rawValue)"
+            if windowStatus == .noValue || windowStatus == .attributeUnsupported {
+                AppLog.info(message)
+            } else {
+                AppLog.error(message)
+            }
+            return nil
+        }
+        let window = rawWindow as! AXUIElement
+        let windowTimeoutStatus = AXUIElementSetMessagingTimeout(window, 0.05)
+        guard windowTimeoutStatus == .success else {
+            AppLog.error("Tip screen lookup failed: pid=\(processIdentifier), stage=windowTimeout, axStatus=\(windowTimeoutStatus.rawValue)")
+            return nil
+        }
+        var rawPosition: CFTypeRef?
+        var rawSize: CFTypeRef?
+        let positionStatus = AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &rawPosition)
+        let sizeStatus = AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &rawSize)
+        guard positionStatus == .success, sizeStatus == .success,
+              let rawPosition, let rawSize,
+              CFGetTypeID(rawPosition) == AXValueGetTypeID(), CFGetTypeID(rawSize) == AXValueGetTypeID() else {
+            AppLog.error("Tip screen lookup failed: pid=\(processIdentifier), stage=geometry, positionStatus=\(positionStatus.rawValue), sizeStatus=\(sizeStatus.rawValue), validValues=false")
+            return nil
+        }
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        let validPosition = AXValueGetValue(rawPosition as! AXValue, .cgPoint, &position)
+        let validSize = AXValueGetValue(rawSize as! AXValue, .cgSize, &size)
+        guard validPosition, validSize, position.x.isFinite, position.y.isFinite,
+              size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
+            AppLog.error("Tip screen lookup failed: pid=\(processIdentifier), stage=geometry, reason=invalidWindowFrame")
+            return nil
+        }
+        return appKitFrame(from: CGRect(origin: position, size: size), primaryScreenTop: primaryScreenTop)
+    }
+}
+
 final class EventTapController: QuitGuardControlling {
     typealias EventTapCreator = (
         CGEventTapLocation,
@@ -207,8 +285,12 @@ final class EventTapController: QuitGuardControlling {
         tipRequestID = requestID
         let expectedLifecycle = lifecycleID
         let requestedAt = tipTimeProvider()
+        let application = handler.trackedApplication
         DispatchQueue.main.async { [weak self] in
             guard let self, self.lifecycleID == expectedLifecycle, self.tipRequestID == requestID else { return }
+            guard duration > max(0, self.tipTimeProvider() - requestedAt) else { return }
+            let screen = self.tipPresenter == nil ? self.currentTipScreen(for: application) : nil
+            // 窗口定位也可能耗时，须在定位后重新计算期限，避免延长提示及确认文案。
             let elapsed = max(0, self.tipTimeProvider() - requestedAt)
             let remainingDuration = duration - elapsed
             guard remainingDuration > 0 else { return }
@@ -221,7 +303,7 @@ final class EventTapController: QuitGuardControlling {
             if let tipPresenter = self.tipPresenter {
                 tipPresenter(currentPrompt, remainingDuration)
             } else {
-                self.presentTipOnMainThread(currentPrompt, duration: remainingDuration)
+                self.presentTipOnMainThread(currentPrompt, duration: remainingDuration, screen: screen)
             }
         }
     }
@@ -484,15 +566,34 @@ private extension EventTapController {
         CGSize(width: TipViewSize.width, height: TipViewSize.height)
     }
 
-    var currentTipScreen: NSScreen? {
-        NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+    /// 使用按键时记录的目标进程读取窗口，避免鼠标留在另一块屏幕时提示错位。
+    func currentTipScreen(for application: QuitGuardApplication?) -> NSScreen? {
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return nil }
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        AppLog.debug("Tip screen lookup started: pid=\(application?.processIdentifier ?? 0)")
+        let windowFrame = application.flatMap {
+            TipScreenPlacement.focusedWindowFrame(processIdentifier: $0.processIdentifier, primaryScreenTop: primary.frame.maxY)
+        }
+        let index = TipScreenPlacement.screenIndex(
+            windowFrame: windowFrame, screenFrames: screens.map(\.frame), mouseLocation: NSEvent.mouseLocation
+        )
+        let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+        let windowIsVisible = windowFrame.map { frame in screens.contains { $0.frame.intersects(frame) } } ?? false
+        if !windowIsVisible {
+            AppLog.info("Tip screen fallback: pid=\(application?.processIdentifier ?? 0), source=mouseOrPrimary, screenIndex=\(index ?? -1), elapsed=\(elapsed)")
+        } else {
+            AppLog.debug("Tip screen resolved: pid=\(application?.processIdentifier ?? 0), source=focusedWindow, screenIndex=\(index ?? -1), elapsed=\(elapsed)")
+        }
+        return index.map { screens[$0] }
     }
 
-    func presentTipOnMainThread(_ prompt: QuitPrompt, duration: TimeInterval) {
+    /// 在非激活窗口中展示当前提示，并使用查询得到的目标屏幕。
+    func presentTipOnMainThread(_ prompt: QuitPrompt, duration: TimeInterval, screen: NSScreen?) {
         tipDismissWorkItem?.cancel()
 
         let window = ensureTipWindow(prompt: prompt, duration: duration)
-        positionTipWindow(window)
+        positionTipWindow(window, screen: screen)
         window.alphaValue = 1
         window.orderFrontRegardless()
 
@@ -598,8 +699,9 @@ private extension EventTapController {
         window.animationBehavior = .none
     }
 
-    func positionTipWindow(_ window: NSWindow) {
-        guard let screen = currentTipScreen else { return }
+    /// 在目标屏幕可见区域居中，保持现有提示尺寸与非激活行为。
+    func positionTipWindow(_ window: NSWindow, screen: NSScreen?) {
+        guard let screen else { return }
 
         let visibleFrame = screen.visibleFrame
         let origin = CGPoint(

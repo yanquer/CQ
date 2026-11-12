@@ -14,6 +14,45 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证提示跟随目标窗口，覆盖左右、上下、负坐标排列及跨屏窗口。
+    func testTipScreenPlacementPrefersTargetWindow() {
+        let primary = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let right = CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+        let left = CGRect(x: -1280, y: 0, width: 1280, height: 1024)
+        let above = CGRect(x: 0, y: 1080, width: 1920, height: 1080)
+        let below = CGRect(x: 0, y: -1080, width: 1920, height: 1080)
+        let screens = [primary, right, left, above, below]
+        let mouse = CGPoint(x: 100, y: 100)
+        for (index, screen) in screens.enumerated() {
+            let window = screen.insetBy(dx: 100, dy: 100)
+            XCTAssertEqual(TipScreenPlacement.screenIndex(windowFrame: window, screenFrames: screens, mouseLocation: mouse), index)
+        }
+        let spanning = CGRect(x: 1700, y: 100, width: 800, height: 600)
+        XCTAssertEqual(TipScreenPlacement.screenIndex(windowFrame: spanning, screenFrames: screens, mouseLocation: mouse), 1)
+        let fullScreen = TipScreenPlacement.appKitFrame(from: CGRect(x: 1920, y: 0, width: 1920, height: 1080), primaryScreenTop: 1080)
+        XCTAssertEqual(fullScreen, right)
+        let aboveFrame = TipScreenPlacement.appKitFrame(from: CGRect(x: 0, y: -1080, width: 1920, height: 1080), primaryScreenTop: 1080)
+        XCTAssertEqual(aboveFrame, above)
+        let belowFrame = TipScreenPlacement.appKitFrame(from: CGRect(x: 0, y: 1080, width: 1920, height: 1080), primaryScreenTop: 1080)
+        XCTAssertEqual(belowFrame, below)
+    }
+
+    /// 验证窗口未知或离屏时按鼠标定位，鼠标也离屏时回退主屏幕，无屏幕返回空结果。
+    func testTipScreenPlacementFallbacks() {
+        let screens = [CGRect(x: 0, y: 0, width: 1920, height: 1080), CGRect(x: 1920, y: 0, width: 1920, height: 1080)]
+        let mouse = CGPoint(x: 2000, y: 100)
+        for frame: CGRect? in [nil, .null, .infinite, CGRect(x: 9000, y: 0, width: 400, height: 300)] {
+            XCTAssertEqual(TipScreenPlacement.screenIndex(windowFrame: frame, screenFrames: screens, mouseLocation: mouse), 1)
+        }
+        XCTAssertEqual(TipScreenPlacement.screenIndex(windowFrame: nil, screenFrames: screens, mouseLocation: CGPoint(x: 9000, y: 0)), 0)
+        XCTAssertNil(TipScreenPlacement.screenIndex(windowFrame: nil, screenFrames: [], mouseLocation: mouse))
+    }
+
+    /// 对无窗口的测试进程进行有界 AX 查询，失败按空结果返回且不弹出授权请求。
+    func testTipWindowLookupForWindowlessProcess() {
+        XCTAssertNil(TipScreenPlacement.focusedWindowFrame(processIdentifier: ProcessInfo.processInfo.processIdentifier, primaryScreenTop: 1080))
+    }
+
     /// 验证主按钮渐变各端点与小字号文字满足至少 4.5 比 1 的对比度。
     @MainActor
     func testPrimaryButtonTextContrast() throws {

@@ -137,7 +137,7 @@ final class EventHandler {
     private let isBlockedApp: (String?) -> Bool
     private let classifier: CommandQEventClassifier
     private let currentApplication: () -> QuitGuardApplication?
-    private var trackedApplication: QuitGuardApplication?
+    private(set) var trackedApplication: QuitGuardApplication?
 
     /// 初始化退出事件处理器，并注入前台进程查询以隔离不同应用的确认状态。
     init(
