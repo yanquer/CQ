@@ -92,9 +92,38 @@ private extension WhitelistSection {
     }
 }
 
+/// 为按键处理保存搜索框所在窗口的弱引用，并同步读取组字状态。
+@MainActor
+private final class MenuSearchInputContext {
+    weak var anchor: NSView?
+
+    /// 仅接管无编辑修饰键、且文本输入系统未处于组字中的方向键。
+    func canMoveSelection(modifiers: EventModifiers) -> Bool {
+        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty,
+              let editor = anchor?.window?.firstResponder as? NSTextInputClient else { return false }
+        return !editor.hasMarkedText()
+    }
+}
+
+/// 将输入上下文定位到搜索框所在窗口，保持原有 SwiftUI 文本框的编辑与焦点行为。
+private struct MenuSearchInputAnchor: NSViewRepresentable {
+    let inputContext: MenuSearchInputContext
+
+    /// 创建不绘制内容的局部锚点，供按键处理同步读取所在窗口。
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        inputContext.anchor = view
+        return view
+    }
+
+    /// 窗口归属由 AppKit 随锚点的视图生命周期维护。
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct MenuWhitelistSearchField: View {
     @Binding var text: String
     @FocusState private var isFocused: Bool
+    @State private var inputContext = MenuSearchInputContext()
     let placeholder: String
     let focusesOnAppear: Bool
     let moveSelection: ((Int) -> Void)?
@@ -122,14 +151,17 @@ struct MenuWhitelistSearchField: View {
                 .foregroundStyle(MenuPanelStyle.textPrimary)
                 .focused($isFocused)
                 .accessibilityLabel(placeholder)
-                .onKeyPress(.downArrow) {
-                    guard let moveSelection else { return .ignored }
-                    moveSelection(1)
-                    return .handled
+                .background {
+                    MenuSearchInputAnchor(inputContext: inputContext)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
-                .onKeyPress(.upArrow) {
-                    guard let moveSelection else { return .ignored }
-                    moveSelection(-1)
+                .onKeyPress(keys: [.downArrow, .upArrow]) { press in
+                    guard let moveSelection,
+                          inputContext.canMoveSelection(modifiers: press.modifiers) else {
+                        return .ignored
+                    }
+                    moveSelection(press.key == .downArrow ? 1 : -1)
                     return .handled
                 }
             if !text.isEmpty {

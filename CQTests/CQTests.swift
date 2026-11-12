@@ -14,6 +14,44 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证编辑修饰键及组字中的上下键交给文本系统，结束组字后仍可正常选择应用。
+    @MainActor
+    func testAppPickerSearchPreservesTextEditingKeys() throws {
+        let items = [makeAppPickerItem("/Applications/Shiny.app"), makeAppPickerItem("/Applications/Shift.app")]
+        let model = makeMenuPanelModel(records: [], appCatalog: AppCatalogSpy(items: items))
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        let window = makeMenuTestWindow(MenuAppPickerSheet(model: model).padding(16).frame(width: 416))
+        defer { window.close(); model.dismissAppPicker() }
+        let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        let directions: [(UInt16, String)] = [(125, "\u{F701}"), (126, "\u{F700}")]
+        for modifiers: NSEvent.ModifierFlags in [.command, .control, .option, .shift] {
+            for (code, characters) in directions {
+                sendMenuTestKey(to: window, code: code, characters: characters, modifiers: modifiers)
+                XCTAssertNil(model.selectedAppPickerItem)
+            }
+        }
+        for (code, characters) in directions {
+            model.appPickerSearchText = ""
+            waitForAsyncWork()
+            editor.setMarkedText("shi", selectedRange: NSRange(location: 3, length: 0), replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            XCTAssertTrue(editor.hasMarkedText())
+            XCTAssertFalse(model.filteredAppPickerItems.isEmpty)
+            sendMenuTestKey(to: window, code: code, characters: characters)
+            XCTAssertNil(model.selectedAppPickerItem)
+            editor.unmarkText()
+        }
+        model.appPickerSearchText = ""
+        waitForAsyncWork()
+        sendMenuTestKey(to: window, code: 125, characters: "\u{F701}", modifiers: .capsLock)
+        XCTAssertEqual(model.selectedAppPickerItem, items.first)
+        sendMenuTestKey(to: window, code: 125, characters: "\u{F701}", isRepeat: true)
+        XCTAssertEqual(model.selectedAppPickerItem, items.last)
+        sendMenuTestKey(to: window, code: 126, characters: "\u{F700}")
+        XCTAssertEqual(model.selectedAppPickerItem, items.first)
+        XCTAssertFalse(window.isVisible)
+    }
+
     /// 验证保存前发出标准变更通知，写入后保存状态立即恢复。
     func testApplyingSettingsPublishesStateChange() {
         let model = makeMenuPanelModel(records: [])
@@ -2472,11 +2510,11 @@ private extension CQTests {
 
     /// 将指定按键仅发送到测试窗口，避免影响用户正在使用的其他应用。
     @MainActor
-    func sendMenuTestKey(to window: NSWindow, code: UInt16, characters: String) {
+    func sendMenuTestKey(to window: NSWindow, code: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = [], isRepeat: Bool = false) {
         guard let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
             windowNumber: window.windowNumber, context: nil, characters: characters,
-            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+            charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: code
         ) else {
             XCTFail("Could not create keyboard event")
             return
