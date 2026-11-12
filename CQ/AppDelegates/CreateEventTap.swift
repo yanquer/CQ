@@ -114,7 +114,7 @@ final class EventTapController: QuitGuardControlling {
     private let statusHandler: (QuitGuardRuntimeStatus) -> Void
     private let tapCreator: EventTapCreator
     private let tapEnabledChecker: (CFMachPort) -> Bool
-    private let tipPresenter: ((QuitPrompt, TimeInterval) -> Void)?
+    private let tipPresenter: ((QuitPrompt, TimeInterval, TipApplication?) -> Void)?
     private let tipTimeProvider: () -> TimeInterval
     private let strategies: [EventTapStrategy]
     private let tipAnimationDuration: TimeInterval = 0.18
@@ -144,7 +144,7 @@ final class EventTapController: QuitGuardControlling {
         strategies: [EventTapStrategy] = EventTapStrategy.defaultStrategies,
         tapCreator: @escaping EventTapCreator = EventTapController.defaultTapCreator,
         tapEnabledChecker: @escaping (CFMachPort) -> Bool = CGEvent.tapIsEnabled,
-        tipPresenter: ((QuitPrompt, TimeInterval) -> Void)? = nil,
+        tipPresenter: ((QuitPrompt, TimeInterval, TipApplication?) -> Void)? = nil,
         tipTimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.config = config
@@ -290,6 +290,7 @@ final class EventTapController: QuitGuardControlling {
             guard let self, self.lifecycleID == expectedLifecycle, self.tipRequestID == requestID else { return }
             guard duration > max(0, self.tipTimeProvider() - requestedAt) else { return }
             let screen = self.tipPresenter == nil ? self.currentTipScreen(for: application) : nil
+            let tipApplication = TipApplication.resolve(application)
             // 窗口定位也可能耗时，须在定位后重新计算期限，避免延长提示及确认文案。
             let elapsed = max(0, self.tipTimeProvider() - requestedAt)
             let remainingDuration = duration - elapsed
@@ -301,9 +302,9 @@ final class EventTapController: QuitGuardControlling {
                 currentPrompt = prompt
             }
             if let tipPresenter = self.tipPresenter {
-                tipPresenter(currentPrompt, remainingDuration)
+                tipPresenter(currentPrompt, remainingDuration, tipApplication)
             } else {
-                self.presentTipOnMainThread(currentPrompt, duration: remainingDuration, screen: screen)
+                self.presentTipOnMainThread(currentPrompt, duration: remainingDuration, application: tipApplication, screen: screen)
             }
         }
     }
@@ -589,10 +590,10 @@ private extension EventTapController {
     }
 
     /// 在非激活窗口中展示当前提示，并使用查询得到的目标屏幕。
-    func presentTipOnMainThread(_ prompt: QuitPrompt, duration: TimeInterval, screen: NSScreen?) {
+    func presentTipOnMainThread(_ prompt: QuitPrompt, duration: TimeInterval, application: TipApplication?, screen: NSScreen?) {
         tipDismissWorkItem?.cancel()
 
-        let window = ensureTipWindow(prompt: prompt, duration: duration)
+        let window = ensureTipWindow(prompt: prompt, duration: duration, application: application)
         positionTipWindow(window, screen: screen)
         window.alphaValue = 1
         window.orderFrontRegardless()
@@ -601,6 +602,7 @@ private extension EventTapController {
         tipModel?.present(
             prompt: prompt,
             duration: duration,
+            application: application,
             animateIn: shouldAnimateIn
         )
         scheduleTipClose(after: duration)
@@ -659,7 +661,8 @@ private extension EventTapController {
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
     }
 
-    func ensureTipWindow(prompt: QuitPrompt, duration: TimeInterval) -> TipPanel {
+    /// 创建携带目标应用信息的提示窗口，后续提示复用同一非激活面板。
+    func ensureTipWindow(prompt: QuitPrompt, duration: TimeInterval, application: TipApplication?) -> TipPanel {
         if let tipWindow {
             return tipWindow
         }
@@ -667,7 +670,8 @@ private extension EventTapController {
         let model = TipOverlayModel(
             presentation: TipPresentation(
                 prompt: prompt,
-                duration: duration
+                duration: duration,
+                application: application
             )
         )
         let hostingController = NSHostingController(rootView: TipView(model: model))

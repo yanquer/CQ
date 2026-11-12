@@ -6,12 +6,43 @@
 //
 
 import Foundation
+import AppKit
 import SwiftUI
+
+/// 保存本次提示对应的应用信息，确认过期时继续使用同一份展示内容。
+struct TipApplication: Equatable {
+    let name: String
+    let icon: NSImage?
+
+    /// 只解析按键时记录的目标进程和路径，避免异步展示时读取另一前台应用。
+    static func resolve(_ application: QuitGuardApplication?) -> TipApplication? {
+        guard let application else {
+            AppLog.error("Tip application lookup unavailable: reason=missingTargetApplication")
+            return nil
+        }
+        let runningApplication = NSRunningApplication(processIdentifier: application.processIdentifier)
+        let target = runningApplication.flatMap { app in
+            application.bundlePath == nil || app.bundleURL?.path == application.bundlePath ? app : nil
+        }
+        if let path = application.bundlePath, FileManager.default.fileExists(atPath: path) {
+            return TipApplication(
+                name: AppPickerItem(url: URL(fileURLWithPath: path)).name,
+                icon: target?.icon ?? NSWorkspace.shared.icon(forFile: path)
+            )
+        }
+        if let name = target?.localizedName, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return TipApplication(name: name, icon: target?.icon)
+        }
+        AppLog.error("Tip application lookup unavailable: pid=\(application.processIdentifier), reason=targetMetadataUnavailable")
+        return TipApplication(name: "应用名称不可用（PID \(application.processIdentifier)）", icon: nil)
+    }
+}
 
 struct TipPresentation: Equatable, Identifiable {
     let id = UUID()
     let prompt: QuitPrompt
     let duration: TimeInterval
+    var application: TipApplication? = nil
 }
 
 final class TipOverlayModel: ObservableObject {
@@ -28,11 +59,12 @@ final class TipOverlayModel: ObservableObject {
     func present(
         prompt: QuitPrompt,
         duration: TimeInterval,
+        application: TipApplication? = nil,
         animateIn: Bool
     ) {
         visibilityID = UUID()
         let expectedVisibilityID = visibilityID
-        presentation = TipPresentation(prompt: prompt, duration: duration)
+        presentation = TipPresentation(prompt: prompt, duration: duration, application: application)
         scheduleConfirmationExpiry(prompt)
         guard animateIn else {
             isVisible = true
@@ -62,7 +94,11 @@ final class TipOverlayModel: ObservableObject {
         let expectedVisibilityID = visibilityID
         let workItem = DispatchWorkItem { [weak self] in
             guard let self, self.visibilityID == expectedVisibilityID else { return }
-            self.presentation = TipPresentation(prompt: .confirmationExpired, duration: self.presentation.duration)
+            self.presentation = TipPresentation(
+                prompt: .confirmationExpired,
+                duration: self.presentation.duration,
+                application: self.presentation.application
+            )
             self.confirmationExpiryWorkItem = nil
         }
         confirmationExpiryWorkItem = workItem
@@ -107,9 +143,15 @@ private struct TipCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
-                leadingBadge
+                applicationIcon
 
                 VStack(alignment: .leading, spacing: 6) {
+                    Text(presentation.application?.name ?? "目标应用信息不可用")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MenuPanelStyle.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
                     Text(presentation.prompt.title)
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(MenuPanelStyle.textPrimary)
@@ -147,43 +189,20 @@ private struct TipCardView: View {
 }
 
 private extension TipCardView {
-    var leadingBadge: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(badgeFill)
-            .frame(width: 46, height: 46)
-            .overlay {
-                if let badgeText = presentation.prompt.badgeText {
-                    Text(badgeText)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundStyle(MenuPanelStyle.textPrimary)
-                } else {
-                    Image(systemName: presentation.prompt.symbolName)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(MenuPanelStyle.textPrimary)
-                }
+    var applicationIcon: some View {
+        Group {
+            if let icon = presentation.application?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 32, weight: .regular))
+                    .foregroundStyle(MenuPanelStyle.textSecondary)
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(MenuPanelStyle.cardOverlay.opacity(1.1), lineWidth: 1)
-            )
-    }
-
-    var badgeFill: some ShapeStyle {
-        switch presentation.prompt {
-        case .confirmExit:
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [
-                        MenuPanelStyle.selectedControlFill,
-                        MenuPanelStyle.accentSoft
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-        case .forwardedLongPress, .confirmationExpired:
-            return AnyShapeStyle(MenuPanelStyle.controlFill)
         }
+        .frame(width: 46, height: 46)
+        .accessibilityHidden(true)
     }
 
     var cardBackground: some View {
@@ -262,7 +281,8 @@ private extension TipProgressBar {
         model: TipOverlayModel(
             presentation: TipPresentation(
                 prompt: .confirmExit(window: 3),
-                duration: 3
+                duration: 3,
+                application: TipApplication(name: "Safari 浏览器", icon: NSImage(systemSymbolName: "safari", accessibilityDescription: nil))
             )
         )
     )
@@ -273,7 +293,8 @@ private extension TipProgressBar {
         model: TipOverlayModel(
             presentation: TipPresentation(
                 prompt: .forwardedLongPress,
-                duration: 1
+                duration: 1,
+                application: TipApplication(name: "Google Chrome", icon: NSImage(systemSymbolName: "globe", accessibilityDescription: nil))
             )
         )
     )

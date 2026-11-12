@@ -1302,11 +1302,96 @@ final class CQTests: XCTestCase {
         CFMachPortInvalidate(port)
     }
 
+    /// 验证提示复用既有本地化名称规则，并能读取目标应用图标。
+    func testTipApplicationUsesLocalizedBundleName() throws {
+        let url = makeTempDirectoryURL().appendingPathComponent("EnglishName.app")
+        try createAppBundle(at: url, displayName: "本地化工具")
+        let application = TipApplication.resolve(QuitGuardApplication(processIdentifier: 999999, bundlePath: url.path))
+        XCTAssertEqual(application?.name, "本地化工具")
+        XCTAssertNotNil(application?.icon)
+    }
+
+    /// 验证目标缺失时如实展示不可用状态，不借用当前前台应用信息。
+    func testTipApplicationReportsMissingTargetMetadata() {
+        XCTAssertNil(TipApplication.resolve(nil))
+        let application = TipApplication.resolve(QuitGuardApplication(processIdentifier: 999999, bundlePath: "/CQTests/Missing.app"))
+        XCTAssertEqual(application?.name, "应用名称不可用（PID 999999）")
+        XCTAssertNil(application?.icon)
+    }
+
+    /// 验证异步提示使用按键时的目标，并在后续应用及长按提示中更新身份。
+    func testQueuedTipKeepsTargetApplication() throws {
+        let root = makeTempDirectoryURL()
+        let firstURL = root.appendingPathComponent("First.app")
+        let secondURL = root.appendingPathComponent("Second.app")
+        try createAppBundle(at: firstURL, displayName: "第一个应用")
+        try createAppBundle(at: secondURL, displayName: "第二个应用")
+        var application = QuitGuardApplication(processIdentifier: 999998, bundlePath: firstURL.path)
+        let handler = EventHandler(
+            config: makeConfig(), state: QuitGuardState(), isBlockedApp: { _ in false },
+            classifier: CommandQEventClassifier(commandQKeyCode: 12), currentApplication: { application }
+        )
+        var names: [String?] = []
+        var prompts: [QuitPrompt] = []
+        let controller = EventTapController(
+            config: makeConfig(), handler: handler,
+            tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
+            tapEnabledChecker: { _ in true },
+            tipPresenter: { prompt, _, target in prompts.append(prompt); names.append(target?.name) }
+        )
+        defer { controller.stop() }
+        XCTAssertTrue(controller.start())
+        let event = commandQEvent(keyDown: true, flags: [.maskCommand])
+        _ = controller.handle(event: event, eventType: .keyDown)
+        application = QuitGuardApplication(processIdentifier: 999997, bundlePath: secondURL.path)
+        handler.resetRuntimeState()
+        waitForAsyncWork()
+        XCTAssertEqual(names, ["第一个应用"])
+        _ = controller.handle(event: event, eventType: .keyDown)
+        waitForAsyncWork()
+        _ = controller.handle(event: event, eventType: .keyDown)
+        waitForAsyncWork()
+        XCTAssertEqual(names, ["第一个应用", "第二个应用", "第二个应用"])
+        XCTAssertEqual(prompts.last, .forwardedLongPress)
+    }
+
+    /// 验证隐藏窗口中普通、长名称、长按、过期及信息缺失提示可渲染，保留截图核对布局。
+    @MainActor
+    func testTipApplicationStatesRenderInHiddenWindow() throws {
+        let icon = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        let longName = "这是一个用于验证退出拦截提示的超长应用名称 Long Application Name"
+        let cases: [(String, QuitPrompt, TipApplication?)] = [
+            ("confirm", .confirmExit(window: 3), TipApplication(name: "示例工具", icon: icon)),
+            ("long-name", .confirmExit(window: 8), TipApplication(name: longName, icon: icon)),
+            ("long-press", .forwardedLongPress, TipApplication(name: "示例工具", icon: icon)),
+            ("expired", .confirmationExpired, TipApplication(name: "示例工具", icon: icon)),
+            ("missing-icon", .confirmExit(window: 3), TipApplication(name: "示例工具", icon: nil)),
+            ("missing-target", .confirmExit(window: 3), nil)
+        ]
+        for (name, prompt, application) in cases {
+            let model = TipOverlayModel(presentation: TipPresentation(prompt: prompt, duration: 3, application: application))
+            model.present(prompt: prompt, duration: 3, application: application, animateIn: false)
+            let window = makeMenuTestWindow(TipView(model: model))
+            defer { model.dismiss(); window.close() }
+            let view = try XCTUnwrap(window.contentView)
+            XCTAssertEqual(view.bounds.size, CGSize(width: TipViewSize.width, height: TipViewSize.height))
+            XCTAssertEqual(model.presentation.application, application)
+            XCTAssertEqual(model.presentation.prompt, prompt)
+            let attachment = XCTAttachment(data: try menuTestImageData(window), uniformTypeIdentifier: "public.png")
+            attachment.name = "tip-" + name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertFalse(window.isVisible)
+        }
+    }
+
     /// 验证提示停留时间比确认窗口长时，过期后不继续声称再按一次即可退出。
     func testTipReflectsExpiredConfirmationWhileStillVisible() {
         let model = TipOverlayModel(presentation: TipPresentation(prompt: .confirmExit(window: 0.02), duration: 1))
-        model.present(prompt: .confirmExit(window: 0.02), duration: 1, animateIn: false)
+        let application = TipApplication(name: "过期前的应用", icon: NSImage(size: NSSize(width: 32, height: 32)))
+        model.present(prompt: .confirmExit(window: 0.02), duration: 1, application: application, animateIn: false)
         waitForAsyncWork()
+        XCTAssertEqual(model.presentation.application, application)
         XCTAssertTrue(model.isVisible)
         XCTAssertFalse(model.presentation.prompt.showsProgress)
         XCTAssertTrue(model.presentation.prompt.title.contains("过期"))
@@ -1315,10 +1400,11 @@ final class CQTests: XCTestCase {
     /// 验证新提示不会被上一条提示的过期回调改写。
     func testNewTipIgnoresOldConfirmationExpiry() {
         let model = TipOverlayModel(presentation: TipPresentation(prompt: .confirmExit(window: 0.02), duration: 1))
-        model.present(prompt: .confirmExit(window: 0.02), duration: 1, animateIn: false)
+        model.present(prompt: .confirmExit(window: 0.02), duration: 1, application: TipApplication(name: "旧应用", icon: nil), animateIn: false)
         model.present(prompt: .confirmExit(window: 2), duration: 2, animateIn: false)
         waitForAsyncWork()
         XCTAssertEqual(model.presentation.prompt, .confirmExit(window: 2))
+        XCTAssertNil(model.presentation.application)
         model.dismiss()
     }
 
@@ -1331,7 +1417,7 @@ final class CQTests: XCTestCase {
             config: makeConfig(alert: 8), handler: makeHandler(isBlockedApp: false),
             tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
             tapEnabledChecker: { _ in true },
-            tipPresenter: { prompts.append($0); durations.append($1) }, tipTimeProvider: { now }
+            tipPresenter: { prompt, duration, _ in prompts.append(prompt); durations.append(duration) }, tipTimeProvider: { now }
         )
         defer { controller.stop() }
         XCTAssertTrue(controller.start())
@@ -1369,7 +1455,7 @@ final class CQTests: XCTestCase {
         let controller = EventTapController(
             config: makeConfig(), handler: handler,
             tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
-            tapEnabledChecker: { _ in true }, tipPresenter: { _, _ in presentationCount += 1 }
+            tapEnabledChecker: { _ in true }, tipPresenter: { _, _, _ in presentationCount += 1 }
         )
         XCTAssertTrue(controller.start())
         controller.stop()
@@ -1389,7 +1475,7 @@ final class CQTests: XCTestCase {
         let controller = EventTapController(
             config: makeConfig(), handler: makeHandler(isBlockedApp: false),
             tapCreator: { _, _, _, _, _, _ in self.makeTestMachPort() },
-            tapEnabledChecker: { _ in true }, tipPresenter: { _, _ in presentationCount += 1 }
+            tapEnabledChecker: { _ in true }, tipPresenter: { _, _, _ in presentationCount += 1 }
         )
         XCTAssertTrue(controller.start())
         _ = controller.handle(event: commandQEvent(keyDown: true, flags: [.maskCommand]), eventType: .keyDown)
