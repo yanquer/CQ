@@ -178,6 +178,7 @@ final class MenuPanelModel: ObservableObject {
     }
     @Published var isShowingAppPicker: Bool = false
     @Published var isLoadingAppPicker: Bool = false
+    @Published private(set) var appPickerLoadError: String?
     @Published var appPickerSearchText: String = "" {
         didSet {
             refreshFilteredAppPickerItems()
@@ -288,6 +289,7 @@ final class MenuPanelModel: ObservableObject {
         if isLoadingAppPicker {
             return "正在整理已安装应用，请稍候。"
         }
+        if let appPickerLoadError { return appPickerLoadError }
         if hasActiveAppPickerSearch {
             return "共找到 \(appPickerItems.count) 个应用，当前匹配 \(filteredAppPickerItems.count) 个。"
         }
@@ -368,6 +370,7 @@ final class MenuPanelModel: ObservableObject {
         appPickerLoadWorkItem = nil
         isShowingAppPicker = false
         isLoadingAppPicker = false
+        appPickerLoadError = nil
         appPickerSearchText = ""
         selectedAppPickerItem = nil
     }
@@ -392,6 +395,12 @@ final class MenuPanelModel: ObservableObject {
 
     func quitApp() {
         quitAction()
+    }
+
+    /// 用户主动重试目录扫描，沿用请求标识隔离与后台加载流程。
+    func reloadAppPicker() {
+        guard isShowingAppPicker, !isLoadingAppPicker else { return }
+        refreshAppPickerItemsIfNeeded(refresh: true)
     }
 }
 
@@ -483,13 +492,19 @@ private extension MenuPanelModel {
         let requestID = UUID()
         appPickerRequestID = requestID
         isLoadingAppPicker = true
+        appPickerLoadError = nil
         let catalog = appCatalog
         let workItem = DispatchWorkItem { [weak self] in
-            let items = catalog.loadApps(refresh: refresh)
+            let result = catalog.loadApps(refresh: refresh)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isShowingAppPicker, self.appPickerRequestID == requestID else { return }
                 self.appPickerLoadWorkItem = nil
-                self.appPickerItems = items
+                self.appPickerItems = result.items
+                if !result.failures.isEmpty {
+                    self.appPickerLoadError = result.items.isEmpty
+                        ? "应用列表加载失败，请重试或浏览选择应用。"
+                        : "已加载 \(result.items.count) 个应用，部分目录读取失败。请重试或浏览选择应用。"
+                }
                 self.isLoadingAppPicker = false
                 self.refreshFilteredAppPickerItems()
             }

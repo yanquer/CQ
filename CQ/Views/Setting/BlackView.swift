@@ -268,6 +268,10 @@ struct MenuAppPickerSheet: View {
                     Button("浏览…", action: model.addWhitelistAppFromFinder)
                         .buttonStyle(.borderless)
                         .help("从 Finder 选择其他位置的应用")
+                    if model.appPickerLoadError != nil {
+                        Button("重新加载", action: model.reloadAppPicker)
+                            .buttonStyle(.borderless)
+                    }
                     Spacer()
                     Button("取消", action: model.dismissAppPicker)
                         .buttonStyle(.bordered)
@@ -299,6 +303,12 @@ private extension MenuAppPickerSheet {
                 }
                 .frame(maxWidth: .infinity, minHeight: MenuPanelStyle.whitelistViewportHeight)
             }
+        } else if model.appPickerItems.isEmpty && model.appPickerLoadError != nil {
+            MenuWhitelistEmptyState(
+                systemImage: "exclamationmark.triangle",
+                title: "应用列表加载失败",
+                subtitle: "点击“重新加载”重试，或使用“浏览…”选择应用。"
+            )
         } else if model.appPickerItems.isEmpty {
             MenuWhitelistEmptyState(
                 systemImage: "app.badge.plus",

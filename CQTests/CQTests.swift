@@ -14,6 +14,76 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证不可读目录保留原始错误，并在恢复访问权限后通过界面重试加载。
+    func testAppCatalogFailureAndRetryRecovery() throws {
+        let root = makeTempDirectoryURL()
+        try createAppBundle(at: root.appendingPathComponent("Example.app"))
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: root.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path) }
+        let catalog = InstalledAppCatalog(appDirectories: [root.path])
+        let result = catalog.loadApps(refresh: true)
+        XCTAssertTrue(result.items.isEmpty)
+        XCTAssertEqual(result.failures.count, 1)
+        XCTAssertEqual(result.failures.first?.error.domain, NSCocoaErrorDomain)
+        XCTAssertEqual(result.failures.first?.error.code, NSFileReadNoPermissionError)
+        let model = makeMenuPanelModel(records: [], appCatalog: catalog)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        XCTAssertNotNil(model.appPickerLoadError)
+        XCTAssertTrue(model.appPickerSubtitleText.contains("加载失败"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        model.reloadAppPicker()
+        waitForAsyncWork()
+        XCTAssertNil(model.appPickerLoadError)
+        XCTAssertEqual(model.appPickerItems.map(\.name), ["Example"])
+        model.dismissAppPicker()
+    }
+
+    /// 验证部分目录失败仍可使用已加载的应用，有效空目录及缺失可选目录保持空结果语义。
+    func testAppCatalogPartialAndEmptyResults() throws {
+        let root = makeTempDirectoryURL()
+        let good = root.appendingPathComponent("Good")
+        let blocked = root.appendingPathComponent("Blocked")
+        let empty = root.appendingPathComponent("Empty")
+        try createAppBundle(at: good.appendingPathComponent("Example.app"))
+        try createDirectories([blocked, empty])
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: blocked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blocked.path) }
+        let catalog = InstalledAppCatalog(appDirectories: [good.path, blocked.path])
+        let result = catalog.loadApps(refresh: true)
+        XCTAssertEqual(result.items.map(\.name), ["Example"])
+        XCTAssertEqual(result.failures.count, 1)
+        let list = makeBlackList()
+        let model = makeMenuPanelModel(records: [], blackList: list, appCatalog: catalog)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        XCTAssertTrue(model.appPickerSubtitleText.contains("部分目录读取失败"))
+        model.moveAppPickerSelection(by: 1)
+        model.confirmAppPickerSelection()
+        XCTAssertEqual(list.records.count, 1)
+        let emptyResult = InstalledAppCatalog(appDirectories: [empty.path, root.appendingPathComponent("Missing").path]).loadApps(refresh: true)
+        XCTAssertTrue(emptyResult.items.isEmpty)
+        XCTAssertTrue(emptyResult.failures.isEmpty)
+    }
+
+    /// 离屏绘制加载失败界面，避免为检查失败提示而将测试窗口置前。
+    @MainActor
+    func testAppPickerFailureViewRenders() throws {
+        let failure = AppCatalogFailure(directory: "/Applications", error: CocoaError(.fileReadNoPermission) as NSError)
+        let model = makeMenuPanelModel(records: [], appCatalog: AppCatalogSpy(items: [], failures: [failure]))
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        defer { model.dismissAppPicker() }
+        XCTAssertNotNil(model.appPickerLoadError)
+        let window = makeMenuTestWindow(MenuAppPickerSheet(model: model).padding(16).frame(width: 416))
+        defer { window.close() }
+        let view = try XCTUnwrap(window.contentView)
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertGreaterThan(try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).count, 0)
+        XCTAssertFalse(window.isVisible)
+    }
+
     /// 验证方向键仅在当前结果中移动，处理首尾边界、过滤后清空选择与无结果。
     func testAppPickerKeyboardSelectionTracksFilteredResults() {
         let first = makeAppPickerItem("/Applications/A.app")
@@ -2019,7 +2089,7 @@ final class CQTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            catalog.loadApps(refresh: true).map { $0.path.replacingOccurrences(of: "/private", with: "") },
+            catalog.loadApps(refresh: true).items.map { $0.path.replacingOccurrences(of: "/private", with: "") },
             [
                 homeApps.appendingPathComponent("Arc.app").path,
                 apps.appendingPathComponent("Safari.app").path,
@@ -2466,9 +2536,11 @@ private extension CQTests {
 
 private struct AppCatalogSpy: InstalledAppCataloging {
     let items: [AppPickerItem]
+    var failures: [AppCatalogFailure] = []
 
-    func loadApps(refresh: Bool) -> [AppPickerItem] {
-        items
+    /// 返回预设应用及失败信息，避免扫描真实应用目录。
+    func loadApps(refresh: Bool) -> AppCatalogResult {
+        AppCatalogResult(items: items, failures: failures)
     }
 }
 
@@ -2647,15 +2719,15 @@ private final class BlockingAppCatalogSpy: InstalledAppCataloging {
     }
 
     /// 按串行扫描次序返回旧与新应用列表。
-    func loadApps(refresh: Bool) -> [AppPickerItem] {
+    func loadApps(refresh: Bool) -> AppCatalogResult {
         loadCount += 1
         if loadCount == 1 {
             firstStarted()
             _ = firstRelease.wait(timeout: .now() + 3)
-            return [AppPickerItem(url: URL(fileURLWithPath: "/Applications/Old.app"))]
+            return AppCatalogResult(items: [AppPickerItem(url: URL(fileURLWithPath: "/Applications/Old.app"))])
         }
         secondStarted()
         _ = secondRelease.wait(timeout: .now() + 3)
-        return [AppPickerItem(url: URL(fileURLWithPath: "/Applications/New.app"))]
+        return AppCatalogResult(items: [AppPickerItem(url: URL(fileURLWithPath: "/Applications/New.app"))])
     }
 }
