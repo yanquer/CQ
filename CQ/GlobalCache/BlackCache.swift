@@ -53,7 +53,7 @@ final class BlackList: ObservableObject {
 
     @Published private(set) var records: [String]
     @Published private(set) var storageError: String?
-    private var requiresReload = false
+    @Published private(set) var requiresReload = false
 
     private var recordSet: Set<String>
     private let store: WhitelistStore
@@ -65,17 +65,34 @@ final class BlackList: ObservableObject {
         loadFromDisk()
     }
 
-    /// 读取失败时保留内存和原文件，向界面报告错误；恢复后可在下一次操作前重读。
-    private func loadFromDisk() {
+    /// 读取失败时保留内存和原文件。增删前恢复沿用缓存，主动重读按磁盘缺失结果清空名单。
+    private func loadFromDisk(keepingRecordsWhenMissing: Bool = true) {
         switch store.loadResult() {
         case .success(let loadedRecords):
-            syncRecords(loadedRecords ?? records)
+            let missingRecords = keepingRecordsWhenMissing ? records : []
+            syncRecords(loadedRecords ?? missingRecords)
             requiresReload = false
             storageError = nil
         case .failure:
             requiresReload = true
             storageError = "白名单无法读取，已保留原文件。修复文件或访问权限后重试。"
         }
+    }
+
+    /// 主动重读当前磁盘配置并报告结果，失败时继续使用内存中的生效名单。
+    @discardableResult
+    func reload() -> Bool {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        AppLog.info("Whitelist reload started: file=\(store.fileURL.lastPathComponent), activeRecords=\(records.count)")
+        loadFromDisk(keepingRecordsWhenMissing: false)
+        let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+        let message = "Whitelist reload completed: file=\(store.fileURL.lastPathComponent), success=\(!requiresReload), activeRecords=\(records.count), elapsed=\(elapsed)"
+        if requiresReload {
+            AppLog.error(message)
+        } else {
+            AppLog.info(message)
+        }
+        return !requiresReload
     }
 
     /// 修改前检查磁盘仍可读取，避免启动后发生的文件损坏被静默覆盖。

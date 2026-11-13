@@ -28,12 +28,18 @@ struct WhitelistSection: View {
                     MenuWhitelistSearchField(text: $model.whitelistSearchText)
                 }
                 listContent
-                if let error = model.whitelistError {
+                if let error = model.whitelistError, !model.whitelistReadFailed || !model.whitelistItems.isEmpty {
                     Text(error)
                         .font(MenuPanelStyle.helperFont)
                         .foregroundStyle(MenuPanelStyle.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if model.whitelistReadFailed {
+                    Button("重新读取", action: model.reloadWhitelist)
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help("重新读取磁盘中的白名单")
                 }
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {
                     MenuInlineActionButton(
@@ -64,7 +70,13 @@ private extension WhitelistSection {
 
     @ViewBuilder
     var listContent: some View {
-        if model.whitelistItems.isEmpty {
+        if model.whitelistReadFailed && model.whitelistItems.isEmpty {
+            MenuWhitelistEmptyState(
+                systemImage: "exclamationmark.triangle",
+                title: "白名单读取失败",
+                subtitle: model.whitelistError ?? "可点击“重新读取”重试。"
+            )
+        } else if model.whitelistItems.isEmpty {
             MenuWhitelistEmptyState()
         } else if model.filteredWhitelistItems.isEmpty {
             MenuWhitelistEmptyState(
@@ -292,6 +304,11 @@ struct MenuAppPickerSheet: View {
                         .font(MenuPanelStyle.helperFont)
                         .foregroundStyle(MenuPanelStyle.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if model.whitelistReadFailed {
+                    Button("重新读取白名单", action: model.reloadWhitelist)
+                        .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 HStack(spacing: MenuPanelStyle.whitelistButtonSpacing) {

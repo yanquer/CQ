@@ -189,6 +189,7 @@ final class MenuPanelModel: ObservableObject {
     @Published var selectedWhitelistItem: String?
     @Published var selectedAppPickerItem: AppPickerItem?
     @Published private(set) var whitelistError: String?
+    @Published private(set) var whitelistReadFailed: Bool
     @Published private(set) var whitelistItems: [String]
     @Published private(set) var filteredWhitelistItems: [String]
     @Published private(set) var appPickerItems: [AppPickerItem]
@@ -240,6 +241,7 @@ final class MenuPanelModel: ObservableObject {
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
         self.whitelistError = blackList.storageError
+        self.whitelistReadFailed = blackList.requiresReload
         self.whitelistItems = blackList.records
         self.filteredWhitelistItems = blackList.records
         self.appPickerItems = []
@@ -278,10 +280,18 @@ final class MenuPanelModel: ObservableObject {
 
     /// 汇总次要设置状态，保护状态由页头单独展示。
     var settingsSummaryText: String {
-        whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
+        if whitelistReadFailed {
+            return whitelistItems.isEmpty ? "白名单读取失败" : "读取失败，沿用 \(whitelistItems.count) 个已放行应用"
+        }
+        return whitelistItems.isEmpty ? "暂未设置跳过应用" : "已放行 \(whitelistItems.count) 个应用"
     }
 
     var whitelistSubtitleText: String {
+        if whitelistReadFailed {
+            return whitelistItems.isEmpty
+                ? "当前无法确认磁盘中的白名单内容。"
+                : "正在沿用已加载的 \(whitelistItems.count) 个应用，可重新读取以尝试恢复。"
+        }
         if whitelistItems.isEmpty {
             return "这些应用可直接退出。添加和移除立即保存。"
         }
@@ -348,6 +358,13 @@ final class MenuPanelModel: ObservableObject {
 
     func addWhitelistApp() {
         presentAppPicker()
+    }
+
+    /// 重读白名单并同步读取结果，现有订阅负责更新各宿主中的列表与选择。
+    func reloadWhitelist() {
+        blackList.reload()
+        whitelistReadFailed = blackList.requiresReload
+        whitelistError = blackList.storageError
     }
 
     /// 移除所选应用并反馈保存结果，失败时保留原列表与选择以便重试。
@@ -435,6 +452,10 @@ private extension MenuPanelModel {
     }
 
     func bindWhitelist() {
+        blackList.$requiresReload
+            .receive(on: RunLoop.main)
+            .sink { [weak self] requiresReload in self?.whitelistReadFailed = requiresReload }
+            .store(in: &cancellables)
         blackList.$storageError
             .receive(on: RunLoop.main)
             .sink { [weak self] error in self?.whitelistError = error }

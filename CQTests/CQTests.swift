@@ -14,6 +14,126 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证主动重读失败保留原文件，恢复后仅更新名单，并区分有效空结果与文件缺失。
+    func testWhitelistReloadRecoversWithoutWriting() throws {
+        let file = makeTempFileURL()
+        try createDirectories([file.deletingLastPathComponent()])
+        let corrupt = Data("broken JSON".utf8)
+        try corrupt.write(to: file)
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.requiresReload)
+        XCTAssertFalse(list.reload())
+        XCTAssertEqual(try Data(contentsOf: file), corrupt)
+        let recovered = try JSONEncoder().encode(["/Applications/Recovered.app"])
+        try recovered.write(to: file)
+        XCTAssertTrue(list.reload())
+        XCTAssertFalse(list.requiresReload)
+        XCTAssertNil(list.storageError)
+        XCTAssertTrue(list.contains("/Applications/Recovered.app"))
+        XCTAssertEqual(try Data(contentsOf: file), recovered)
+        try JSONEncoder().encode([String]()).write(to: file)
+        XCTAssertTrue(list.reload())
+        XCTAssertTrue(list.records.isEmpty)
+        XCTAssertFalse(list.contains("/Applications/Recovered.app"))
+        try FileManager.default.removeItem(at: file)
+        XCTAssertTrue(list.reload())
+        XCTAssertTrue(list.records.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    /// 验证重读失败时保留已生效名单，主动读取缺失文件时更新为空名单。
+    func testWhitelistReloadFailureKeepsActiveRecords() throws {
+        let file = makeTempFileURL()
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.append(data: "/Applications/Active.app"))
+        let corrupt = Data("truncated [".utf8)
+        try corrupt.write(to: file)
+        XCTAssertFalse(list.reload())
+        XCTAssertTrue(list.requiresReload)
+        XCTAssertEqual(list.records, ["/Applications/Active.app"])
+        XCTAssertTrue(list.contains("/Applications/Active.app"))
+        XCTAssertEqual(try Data(contentsOf: file), corrupt)
+        try FileManager.default.removeItem(at: file)
+        XCTAssertTrue(list.reload())
+        XCTAssertTrue(list.records.isEmpty)
+        XCTAssertFalse(list.contains("/Applications/Active.app"))
+    }
+
+    /// 验证真实文件权限不足时重读失败，恢复访问权限后可读取且保留原文件内容。
+    func testWhitelistReloadPermissionFailureCanRecover() throws {
+        let file = makeTempFileURL()
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        XCTAssertTrue(list.append(data: "/Applications/Active.app"))
+        let original = try Data(contentsOf: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) }
+        XCTAssertFalse(list.reload())
+        XCTAssertTrue(list.requiresReload)
+        XCTAssertTrue(list.contains("/Applications/Active.app"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        XCTAssertTrue(list.reload())
+        XCTAssertEqual(try Data(contentsOf: file), original)
+    }
+
+    /// 验证读取错误与空名单分别展示，重读同步两个模型并保留选择器中的待添加项。
+    func testWhitelistReloadSynchronizesModelsAndPicker() throws {
+        let file = makeTempFileURL()
+        try createDirectories([file.deletingLastPathComponent()])
+        try Data("broken JSON".utf8).write(to: file)
+        let list = BlackList(store: WhitelistStore(fileURL: file))
+        let item = makeAppPickerItem("/Applications/Added.app")
+        let first = makeMenuPanelModel(records: [], blackList: list, appCatalog: AppCatalogSpy(items: [item]))
+        let second = makeMenuPanelModel(records: [], blackList: list)
+        XCTAssertTrue(first.whitelistReadFailed)
+        XCTAssertEqual(first.settingsSummaryText, "白名单读取失败")
+        XCTAssertTrue(first.whitelistSubtitleText.contains("无法确认"))
+        first.doubleTapIntervalDraft = 6
+        first.addWhitelistApp()
+        waitForAsyncWork()
+        first.selectAppPickerItem(item)
+        let recovered = try JSONEncoder().encode(["/Applications/Recovered.app"])
+        try recovered.write(to: file)
+        first.reloadWhitelist()
+        waitForAsyncWork()
+        for model in [first, second] {
+            XCTAssertFalse(model.whitelistReadFailed)
+            XCTAssertNil(model.whitelistError)
+            XCTAssertEqual(model.whitelistItems, ["/Applications/Recovered.app"])
+            XCTAssertEqual(model.settingsSummaryText, "已放行 1 个应用")
+        }
+        XCTAssertEqual(try Data(contentsOf: file), recovered)
+        XCTAssertEqual(first.selectedAppPickerItem, item)
+        XCTAssertTrue(first.hasPendingChanges)
+        first.confirmAppPickerSelection()
+        XCTAssertEqual(list.records, ["/Applications/Recovered.app", item.path])
+    }
+
+    /// 验证两个隐藏宿主在读取失败与有效空名单之间同步更新实际界面。
+    @MainActor
+    func testWhitelistReadFailureUpdatesHiddenScreens() throws {
+        let file = makeTempFileURL()
+        try createDirectories([file.deletingLastPathComponent()])
+        try Data("broken JSON".utf8).write(to: file)
+        let model = makeMenuPanelModel(records: [], blackList: BlackList(store: WhitelistStore(fileURL: file)))
+        model.selectedTab = .whitelist
+        let windows = [
+            makeMenuTestWindow(MenuPanelScreen(model: model, size: .popover)),
+            makeMenuTestWindow(SettingView(model: model))
+        ]
+        defer { windows.forEach { $0.close() } }
+        let failureImages = try windows.map(menuTestImageData)
+        try JSONEncoder().encode([String]()).write(to: file)
+        model.reloadWhitelist()
+        waitForAsyncWork()
+        XCTAssertFalse(model.whitelistReadFailed)
+        XCTAssertEqual(model.settingsSummaryText, "暂未设置跳过应用")
+        let emptyImages = try windows.map(menuTestImageData)
+        for index in windows.indices {
+            XCTAssertNotEqual(failureImages[index], emptyImages[index])
+            XCTAssertFalse(windows[index].isVisible)
+        }
+    }
+
     /// 验证编辑修饰键及组字中的上下键交给文本系统，结束组字后仍可正常选择应用。
     @MainActor
     func testAppPickerSearchPreservesTextEditingKeys() throws {
