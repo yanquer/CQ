@@ -52,6 +52,29 @@ final class MenuPopoverController: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         removeClickMonitors()
     }
+
+    /// 分发弹层本地事件，组字中的 Escape 与模态窗口按键交由输入系统处理。
+    func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown {
+            let window = popover.contentViewController?.view.window
+            if let window,
+               event.keyCode == 53,
+               event.window === window,
+               window.attachedSheet == nil {
+                if let editor = window.firstResponder as? NSTextInputClient,
+                   editor.hasMarkedText() {
+                    return event
+                }
+                close()
+                return nil
+            }
+            return event
+        }
+        if shouldClosePopover(at: screenPoint(for: event)) {
+            close()
+        }
+        return event
+    }
 }
 
 private extension MenuPopoverController {
@@ -82,22 +105,6 @@ private extension MenuPopoverController {
             NSEvent.removeMonitor(globalMonitor)
             self.globalMonitor = nil
         }
-    }
-
-    /// 处理弹层点击和 Escape，选择器打开时将键盘交给系统模态窗口。
-    func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
-        if event.type == .keyDown {
-            let window = popover.contentViewController?.view.window
-            if event.keyCode == 53, event.window === window, window?.attachedSheet == nil {
-                close()
-                return nil
-            }
-            return event
-        }
-        if shouldClosePopover(at: screenPoint(for: event)) {
-            close()
-        }
-        return event
     }
 
     func handleGlobalClick() {

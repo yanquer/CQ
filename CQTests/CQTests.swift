@@ -14,6 +14,46 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证菜单处理器放行组字中的 Escape，结束组字后恢复普通关闭行为。
+    @MainActor
+    func testMenuEscapePreservesMarkedText() throws {
+        var text = ""
+        let controller = MenuPopoverController()
+        let window = makeMenuTestWindow(
+            MenuWhitelistSearchField(text: Binding(get: { text }, set: { text = $0 }), focusesOnAppear: true).frame(width: 300),
+            popoverController: controller
+        )
+        defer { window.close() }
+        let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        editor.setMarkedText("shi", selectedRange: NSRange(location: 3, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+        let event = try XCTUnwrap(menuTestKeyEvent(to: window, code: 53, characters: "\u{1b}"))
+        XCTAssertTrue(controller.handleLocalEvent(event) === event)
+        XCTAssertTrue(editor.hasMarkedText())
+        editor.unmarkText()
+        XCTAssertNil(controller.handleLocalEvent(event))
+        XCTAssertFalse(window.isVisible)
+    }
+
+    /// 验证其他按键、其他窗口及窗口缺失时的 Escape 均按原事件转发。
+    @MainActor
+    func testMenuEscapeRespectsEventWindow() throws {
+        let controller = MenuPopoverController()
+        let window = makeMenuTestWindow(Text("菜单"), popoverController: controller)
+        let otherWindow = makeMenuTestWindow(Text("其他窗口"))
+        defer { window.close(); otherWindow.close() }
+        let escape = try XCTUnwrap(menuTestKeyEvent(to: window, code: 53, characters: "\u{1b}"))
+        XCTAssertNil(controller.handleLocalEvent(escape))
+        let otherKey = try XCTUnwrap(menuTestKeyEvent(to: window, code: 0, characters: "a"))
+        XCTAssertTrue(controller.handleLocalEvent(otherKey) === otherKey)
+        let otherEscape = try XCTUnwrap(menuTestKeyEvent(to: otherWindow, code: 53, characters: "\u{1b}"))
+        XCTAssertTrue(controller.handleLocalEvent(otherEscape) === otherEscape)
+        let noWindow = try XCTUnwrap(menuTestKeyEvent(to: nil, code: 53, characters: "\u{1b}"))
+        XCTAssertTrue(MenuPopoverController().handleLocalEvent(noWindow) === noWindow)
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(otherWindow.isVisible)
+    }
+
     /// 验证预览模型立即可见并保持指定提示，普通初始化仍从隐藏状态开始。
     func testTipPreviewModelKeepsStaticPresentation() {
         for prompt: QuitPrompt in [.confirmExit(window: 0.01), .forwardedLongPress] {
@@ -2719,8 +2759,16 @@ private extension CQTests {
 
     /// 使用隔离模型创建真实宿主窗口，不启动退出拦截、不读写用户配置。
     @MainActor
-    func makeMenuTestWindow<Content: View>(_ content: Content) -> NSWindow {
+    func makeMenuTestWindow<Content: View>(
+        _ content: Content,
+        popoverController: MenuPopoverController? = nil
+    ) -> NSWindow {
         let hosting = NSHostingView(rootView: content)
+        if let popoverController {
+            let controller = NSViewController()
+            controller.view = hosting
+            popoverController.configure(contentViewController: controller, size: hosting.fittingSize)
+        }
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
             styleMask: [.titled, .closable], backing: .buffered, defer: false
@@ -2771,15 +2819,27 @@ private extension CQTests {
     /// 将指定按键仅发送到测试窗口，避免影响用户正在使用的其他应用。
     @MainActor
     func sendMenuTestKey(to window: NSWindow, code: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = [], isRepeat: Bool = false) {
-        guard let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
-            windowNumber: window.windowNumber, context: nil, characters: characters,
-            charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: code
-        ) else {
+        guard let event = menuTestKeyEvent(to: window, code: code, characters: characters, modifiers: modifiers, isRepeat: isRepeat) else {
             XCTFail("Could not create keyboard event")
             return
         }
         if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+    }
+
+    /// 构造交给指定隐藏窗口处理的按键，无窗口事件用于校验转发边界。
+    @MainActor
+    func menuTestKeyEvent(
+        to window: NSWindow?,
+        code: UInt16,
+        characters: String,
+        modifiers: NSEvent.ModifierFlags = [],
+        isRepeat: Bool = false
+    ) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+            windowNumber: window?.windowNumber ?? 0, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: code
+        )
     }
 
     /// 将真实宿主内容离屏绘制成附件，检查尺寸有效且便于统一审阅各界面状态。
