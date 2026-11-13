@@ -14,6 +14,41 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证预览模型立即可见并保持指定提示，普通初始化仍从隐藏状态开始。
+    func testTipPreviewModelKeepsStaticPresentation() {
+        for prompt: QuitPrompt in [.confirmExit(window: 0.01), .forwardedLongPress] {
+            let presentation = TipPresentation(prompt: prompt, duration: 0, application: TipApplication(name: "预览应用", icon: nil))
+            let preview = TipOverlayModel.preview(presentation: presentation)
+            XCTAssertTrue(preview.isVisible)
+            XCTAssertEqual(preview.presentation, presentation)
+            waitForAsyncWork()
+            XCTAssertTrue(preview.isVisible)
+            XCTAssertEqual(preview.presentation, presentation)
+            XCTAssertFalse(TipOverlayModel(presentation: presentation).isVisible)
+        }
+    }
+
+    /// 对照预览与隐藏模型的离屏图像，验证两个预览持续展示可见卡片。
+    @MainActor
+    func testTipPreviewsRenderVisibleStaticCards() throws {
+        for prompt: QuitPrompt in [.confirmExit(window: 0.01), .forwardedLongPress] {
+            let presentation = TipPresentation(
+                prompt: prompt, duration: 0,
+                application: TipApplication(name: "预览应用", icon: NSImage(systemSymbolName: "safari", accessibilityDescription: nil))
+            )
+            let preview = TipOverlayModel.preview(presentation: presentation)
+            let visibleWindow = makeMenuTestWindow(TipView(model: preview))
+            let hiddenWindow = makeMenuTestWindow(TipView(model: TipOverlayModel(presentation: presentation)))
+            defer { visibleWindow.close(); hiddenWindow.close() }
+            let visible = try menuTestImageData(visibleWindow)
+            XCTAssertNotEqual(visible, try menuTestImageData(hiddenWindow))
+            waitForAsyncWork()
+            XCTAssertEqual(visible, try menuTestImageData(visibleWindow))
+            XCTAssertFalse(visibleWindow.isVisible)
+            XCTAssertFalse(hiddenWindow.isVisible)
+        }
+    }
+
     /// 验证主动重读失败保留原文件，恢复后仅更新名单，并区分有效空结果与文件缺失。
     func testWhitelistReloadRecoversWithoutWriting() throws {
         let file = makeTempFileURL()

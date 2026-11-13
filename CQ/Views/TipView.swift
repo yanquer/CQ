@@ -55,6 +55,13 @@ final class TipOverlayModel: ObservableObject {
         self.presentation = presentation
     }
 
+    /// 创建可见的预览模型，供画布持续核对指定提示样式。
+    static func preview(presentation: TipPresentation) -> TipOverlayModel {
+        let model = TipOverlayModel(presentation: presentation)
+        model.isVisible = true
+        return model
+    }
+
     /// 显示新提示并隔离异步入场动画，关闭后的旧动画不能重新显示提示。
     func present(
         prompt: QuitPrompt,
@@ -278,10 +285,10 @@ private extension TipProgressBar {
 
 #Preview("确认退出") {
     TipView(
-        model: TipOverlayModel(
+        model: TipOverlayModel.preview(
             presentation: TipPresentation(
                 prompt: .confirmExit(window: 3),
-                duration: 3,
+                duration: 0, // 固定预览进度条，持续展示确认样式。
                 application: TipApplication(name: "Safari 浏览器", icon: NSImage(systemSymbolName: "safari", accessibilityDescription: nil))
             )
         )
@@ -290,10 +297,10 @@ private extension TipProgressBar {
 
 #Preview("长按透传") {
     TipView(
-        model: TipOverlayModel(
+        model: TipOverlayModel.preview(
             presentation: TipPresentation(
                 prompt: .forwardedLongPress,
-                duration: 1,
+                duration: 0,
                 application: TipApplication(name: "Google Chrome", icon: NSImage(systemSymbolName: "globe", accessibilityDescription: nil))
             )
         )
