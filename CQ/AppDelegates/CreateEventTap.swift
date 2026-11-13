@@ -11,9 +11,30 @@ import Foundation
 import AppKit
 import SwiftUI
 
-private final class TipPanel: NSPanel {
+final class TipPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// 创建可跨应用显示的非激活提示面板，兼容台前调度与全屏空间。
+    init(contentRect: NSRect) {
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        level = .mainMenu
+        // 提示需加入其他应用的台前调度分组，才能在 CQ 未激活时显示。
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        isMovable = false
+        hidesOnDeactivate = false
+        ignoresMouseEvents = true
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+    }
 }
 
 /// 根据按键目标窗口的实际覆盖区域选择提示屏幕，窗口不可读时才使用鼠标位置。
@@ -286,15 +307,27 @@ final class EventTapController: QuitGuardControlling {
         let expectedLifecycle = lifecycleID
         let requestedAt = tipTimeProvider()
         let application = handler.trackedApplication
+        AppLog.info("Tip presentation requested: request=\(requestID), pid=\(application?.processIdentifier ?? 0), duration=\(duration)")
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.lifecycleID == expectedLifecycle, self.tipRequestID == requestID else { return }
-            guard duration > max(0, self.tipTimeProvider() - requestedAt) else { return }
+            guard let self else { return }
+            guard self.lifecycleID == expectedLifecycle, self.tipRequestID == requestID else {
+                AppLog.info("Tip presentation skipped: request=\(requestID), reason=requestInvalidated, lifecycleMatches=\(self.lifecycleID == expectedLifecycle), requestMatches=\(self.tipRequestID == requestID)")
+                return
+            }
+            guard duration > max(0, self.tipTimeProvider() - requestedAt) else {
+                AppLog.info("Tip presentation skipped: request=\(requestID), reason=queueDeadlineExpired")
+                return
+            }
             let screen = self.tipPresenter == nil ? self.currentTipScreen(for: application) : nil
             let tipApplication = TipApplication.resolve(application)
             // 窗口定位也可能耗时，须在定位后重新计算期限，避免延长提示及确认文案。
             let elapsed = max(0, self.tipTimeProvider() - requestedAt)
             let remainingDuration = duration - elapsed
-            guard remainingDuration > 0 else { return }
+            guard remainingDuration > 0 else {
+                AppLog.info("Tip presentation skipped: request=\(requestID), reason=preparationDeadlineExpired, elapsed=\(elapsed)")
+                return
+            }
+            AppLog.info("Tip presentation prepared: request=\(requestID), pid=\(application?.processIdentifier ?? 0), elapsed=\(elapsed), remainingDuration=\(remainingDuration)")
             let currentPrompt: QuitPrompt
             if case .confirmExit(let window) = prompt {
                 currentPrompt = window > elapsed ? .confirmExit(window: window - elapsed) : .confirmationExpired
@@ -605,6 +638,7 @@ private extension EventTapController {
             application: application,
             animateIn: shouldAnimateIn
         )
+        AppLog.info("Tip window ordered: window=\(window.windowNumber), visible=\(window.isVisible), activeSpace=\(window.isOnActiveSpace), occlusionVisible=\(window.occlusionState.contains(.visible)), appHidden=\(NSApp.isHidden), frame=\(window.frame), collectionBehavior=\(window.collectionBehavior.rawValue)")
         scheduleTipClose(after: duration)
     }
 
@@ -676,31 +710,14 @@ private extension EventTapController {
         )
         let hostingController = NSHostingController(rootView: TipView(model: model))
         let window = TipPanel(
-            contentRect: CGRect(origin: .zero, size: tipWindowSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+            contentRect: CGRect(origin: .zero, size: tipWindowSize)
         )
 
         window.contentViewController = hostingController
-        configureTipWindow(window)
 
         tipModel = model
         tipWindow = window
         return window
-    }
-
-    func configureTipWindow(_ window: TipPanel) {
-        window.level = .mainMenu
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = false
-        window.isMovable = false
-        window.hidesOnDeactivate = false
-        window.ignoresMouseEvents = true
-        window.isReleasedWhenClosed = false
-        window.animationBehavior = .none
     }
 
     /// 在目标屏幕可见区域居中，保持现有提示尺寸与非激活行为。

@@ -1302,6 +1302,25 @@ final class CQTests: XCTestCase {
         CFMachPortInvalidate(port)
     }
 
+    /// 验证真实提示面板可加入其他应用的台前调度分组，同时保持非激活行为。
+    @MainActor
+    func testTipPanelJoinsAllApplicationsWithoutTakingFocus() {
+        let window = TipPanel(contentRect: CGRect(x: 0, y: 0, width: TipViewSize.width, height: TipViewSize.height))
+        defer { window.close() }
+        XCTAssertTrue(window.collectionBehavior.contains(.canJoinAllApplications))
+        XCTAssertTrue(window.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenAuxiliary))
+        XCTAssertFalse(window.collectionBehavior.contains(.primary))
+        XCTAssertFalse(window.collectionBehavior.contains(.auxiliary))
+        XCTAssertTrue(window.styleMask.contains(.nonactivatingPanel))
+        XCTAssertFalse(window.canBecomeKey)
+        XCTAssertFalse(window.canBecomeMain)
+        XCTAssertTrue(window.ignoresMouseEvents)
+        XCTAssertFalse(window.hidesOnDeactivate)
+        XCTAssertEqual(window.level, .mainMenu)
+        XCTAssertFalse(window.isVisible)
+    }
+
     /// 验证提示复用既有本地化名称规则，并能读取目标应用图标。
     func testTipApplicationUsesLocalizedBundleName() throws {
         let url = makeTempDirectoryURL().appendingPathComponent("EnglishName.app")
