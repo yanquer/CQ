@@ -21,7 +21,15 @@ struct QuitGuardSettings {
     }
 }
 
-final class QuitGuardSettingsStore {
+/// 定义时间设置的读写边界，供持久配置与预览内存配置共同使用。
+protocol QuitGuardSettingsStoring {
+    /// 读取当前时间设置。
+    func load() -> QuitGuardSettings
+    /// 保存经过调用方校验的时间设置。
+    func save(_ settings: QuitGuardSettings)
+}
+
+final class QuitGuardSettingsStore: QuitGuardSettingsStoring {
     private enum Key {
         static let doubleTapInterval = "quit_guard.double_tap_interval"
         static let alertWindowCloseTime = "quit_guard.alert_window_close_time"
@@ -80,7 +88,7 @@ final class QuitGuardSettingsStore {
 final class QuitGuardConfig {
     static let shared = QuitGuardConfig()
 
-    private let store: QuitGuardSettingsStore
+    private let store: QuitGuardSettingsStoring
 
     private var settings: QuitGuardSettings
 
@@ -105,7 +113,7 @@ final class QuitGuardConfig {
     }
 
     /// 加载经过校验的配置，运行时赋值与持久化使用相同校验规则。
-    init(store: QuitGuardSettingsStore = QuitGuardSettingsStore()) {
+    init(store: QuitGuardSettingsStoring = QuitGuardSettingsStore()) {
         self.store = store
         self.settings = store.load()
     }

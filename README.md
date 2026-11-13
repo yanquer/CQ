@@ -61,6 +61,7 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 
 ## 开发说明
 
+- 设置类画布预览通过 `MenuPanelModel.preview()` 构造，配置与白名单保存在各实例的内存中，登录项及系统选择操作使用模拟回调。
 - 本地跑单测时建议关闭签名校验，避免被已撤销证书影响：
   `xcodebuild test -project CQ.xcodeproj -scheme CQ -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' -only-testing:CQTests`
 - 如果要定位退出保护问题，优先查看统一日志和上面的诊断文件，两边会输出同一套事件名：

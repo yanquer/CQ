@@ -12,6 +12,12 @@ struct AppPickerItem: Identifiable, Equatable {
     let name: String
     let path: String
 
+    /// 从已知展示数据构造应用条目，供预览使用固定应用样例。
+    init(name: String, path: String) {
+        self.name = name
+        self.path = path
+    }
+
     /// 读取应用的本地化显示名称，并保留路径作为稳定身份与搜索依据。
     init(url: URL) {
         self.name = Self.displayName(for: url)

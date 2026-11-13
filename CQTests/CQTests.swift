@@ -14,6 +14,96 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 验证不同预览各自保存时间、登录状态和白名单，重读仍使用该实例的内存数据。
+    @MainActor
+    func testMenuPreviewModelsKeepIndependentState() throws {
+        let first = MenuPanelModel.preview()
+        let second = MenuPanelModel.preview()
+        XCTAssertFalse(first === second)
+        XCTAssertEqual(first.runtimeStatus, .ready)
+        XCTAssertEqual(first.whitelistItems, ["/PreviewApplications/Browser.app"])
+        XCTAssertEqual(first.whitelistAppName(for: first.whitelistItems[0]), "示例浏览器")
+        first.doubleTapIntervalDraft = 6
+        first.alertCloseTimeDraft = 5
+        first.applySettings()
+        XCTAssertFalse(first.hasPendingChanges)
+        XCTAssertEqual(second.doubleTapIntervalDraft, 3)
+        XCTAssertEqual(second.alertCloseTimeDraft, 3)
+        first.toggleLaunchAtLogin(true)
+        first.refreshAutoLaunchStatus()
+        second.refreshAutoLaunchStatus()
+        XCTAssertTrue(first.startAtLogin)
+        XCTAssertFalse(second.startAtLogin)
+        first.selectWhitelistItem(first.whitelistItems[0])
+        first.removeSelectedWhitelistItem()
+        waitForAsyncWork()
+        first.reloadWhitelist()
+        waitForAsyncWork()
+        XCTAssertTrue(first.whitelistItems.isEmpty)
+        XCTAssertEqual(second.whitelistItems.count, 1)
+        first.addWhitelistApp()
+        waitForAsyncWork()
+        first.appPickerSearchText = "示例编辑器"
+        let editor = try XCTUnwrap(first.filteredAppPickerItems.first)
+        XCTAssertEqual(first.filteredAppPickerItems.count, 1)
+        first.selectAppPickerItem(editor)
+        first.confirmAppPickerSelection()
+        waitForAsyncWork()
+        first.reloadWhitelist()
+        waitForAsyncWork()
+        XCTAssertEqual(first.whitelistItems, [editor.path])
+        XCTAssertEqual(first.whitelistAppName(for: editor.path), "示例编辑器")
+        second.reloadWhitelist()
+        waitForAsyncWork()
+        XCTAssertEqual(second.whitelistItems, ["/PreviewApplications/Browser.app"])
+        let fresh = MenuPanelModel.preview()
+        XCTAssertEqual(fresh.doubleTapIntervalDraft, 3)
+        XCTAssertEqual(fresh.alertCloseTimeDraft, 3)
+        XCTAssertFalse(fresh.startAtLogin)
+        XCTAssertEqual(fresh.whitelistItems, ["/PreviewApplications/Browser.app"])
+        XCTAssertFalse(first.hasPendingChanges)
+        XCTAssertNil(first.whitelistError)
+    }
+
+    /// 验证目录、浏览、退出和重新检查使用固定预览回调，画布状态可继续交互。
+    @MainActor
+    func testMenuPreviewSystemActionsUseSampleData() {
+        let model = MenuPanelModel.preview()
+        model.toggleLaunchAtLogin(true)
+        XCTAssertEqual(model.loginStatus, .enabled)
+        model.toggleLaunchAtLogin(false)
+        XCTAssertEqual(model.loginStatus, .notRegistered)
+        model.recheckProtection()
+        XCTAssertEqual(model.runtimeStatus, .ready)
+        model.addWhitelistApp()
+        waitForAsyncWork()
+        XCTAssertEqual(model.appPickerItems.map(\.name), ["示例浏览器", "示例编辑器", "示例终端"])
+        XCTAssertFalse(model.isLoadingAppPicker)
+        model.addWhitelistAppFromFinder()
+        model.appPickerDidDismiss()
+        waitForAsyncWork()
+        XCTAssertEqual(model.whitelistItems, ["/PreviewApplications/Browser.app", "/PreviewApplications/Editor.app"])
+        XCTAssertFalse(model.isShowingAppPicker)
+        model.quitApp()
+        XCTAssertNil(model.whitelistError)
+    }
+
+    /// 使用四个预览的相同入口离屏渲染，确认隔离模型可以直接承载各界面。
+    @MainActor
+    func testSettingsPreviewViewsRenderWithIsolatedModels() throws {
+        let windows = [
+            makeMenuTestWindow(MenuShowView(model: .preview())),
+            makeMenuTestWindow(SettingView(model: .preview())),
+            makeMenuTestWindow(GeneralSettingsSection(model: .preview()).frame(width: 384)),
+            makeMenuTestWindow(WhitelistSection(model: .preview()).frame(width: 384))
+        ]
+        defer { windows.forEach { $0.close() } }
+        for window in windows {
+            XCTAssertGreaterThan(try menuTestImageData(window).count, 0)
+            XCTAssertFalse(window.isVisible)
+        }
+    }
+
     /// 用隐藏状态栏控件验证实际入口配置提供名称、用途和菜单动作。
     @MainActor
     func testMenuBarButtonExposesAccessibleNameAndHelp() throws {

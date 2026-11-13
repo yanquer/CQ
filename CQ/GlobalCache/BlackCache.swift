@@ -8,7 +8,16 @@
 import Combine
 import Foundation
 
-final class WhitelistStore {
+/// 定义白名单的读写与诊断来源，供磁盘实现和预览内存实现共同使用。
+protocol WhitelistStoring {
+    var sourceName: String { get }
+    /// 读取白名单并保留失败与缺失状态。
+    func loadResult() -> Result<[String]?, Error>
+    /// 保存候选白名单并返回是否成功。
+    func save(_ records: [String]) -> Bool
+}
+
+final class WhitelistStore: WhitelistStoring {
     private let fileStore: AppFileStore
 
     init(fileStore: AppFileStore = AppFileStore(fileName: "whitelist.json")) {
@@ -21,6 +30,11 @@ final class WhitelistStore {
 
     var fileURL: URL {
         fileStore.fileURL
+    }
+
+    /// 返回用于日志定位的存储来源名称。
+    var sourceName: String {
+        fileURL.lastPathComponent
     }
 
     /// 保留读取失败信息，只有首次缺失才视为空白名单。
@@ -56,10 +70,16 @@ final class BlackList: ObservableObject {
     @Published private(set) var requiresReload = false
 
     private var recordSet: Set<String>
-    private let store: WhitelistStore
+    private let store: WhitelistStoring
+    private let canonicalPath: (String) -> String
 
-    init(store: WhitelistStore = WhitelistStore()) {
+    /// 注入白名单存储及路径解析，预览可提供纯内存数据与确定性路径。
+    init(
+        store: WhitelistStoring = WhitelistStore(),
+        canonicalPath: @escaping (String) -> String = BlackList.resolveCanonicalPath
+    ) {
         self.store = store
+        self.canonicalPath = canonicalPath
         self.records = []
         self.recordSet = []
         loadFromDisk()
@@ -83,10 +103,10 @@ final class BlackList: ObservableObject {
     @discardableResult
     func reload() -> Bool {
         let startedAt = ProcessInfo.processInfo.systemUptime
-        AppLog.info("Whitelist reload started: file=\(store.fileURL.lastPathComponent), activeRecords=\(records.count)")
+        AppLog.info("Whitelist reload started: source=\(store.sourceName), activeRecords=\(records.count)")
         loadFromDisk(keepingRecordsWhenMissing: false)
         let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
-        let message = "Whitelist reload completed: file=\(store.fileURL.lastPathComponent), success=\(!requiresReload), activeRecords=\(records.count), elapsed=\(elapsed)"
+        let message = "Whitelist reload completed: source=\(store.sourceName), success=\(!requiresReload), activeRecords=\(records.count), elapsed=\(elapsed)"
         if requiresReload {
             AppLog.error(message)
         } else {
@@ -123,8 +143,8 @@ final class BlackList: ObservableObject {
         recordSet.contains(path) || recordSet.contains(canonicalPath(path))
     }
 
-    /// 统一同一应用的符号链接路径；相对路径不解释为当前工作目录下的应用。
-    private func canonicalPath(_ path: String) -> String {
+    /// 解析应用规范路径，用于符号链接去重与命中。
+    private static func resolveCanonicalPath(_ path: String) -> String {
         guard path.hasPrefix("/") else { return path }
         return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }

@@ -204,13 +204,14 @@ final class MenuPanelModel: ObservableObject {
     private let setAutoLaunch: (Bool) throws -> Void
     private let quitAction: () -> Void
     private let recheckProtectionAction: () -> Void
+    private let appNameProvider: (String) -> String
     private var cancellables: Set<AnyCancellable> = []
     private var appPickerRequestID: UUID?
     private var appPickerLoadWorkItem: DispatchWorkItem?
     private var shouldOpenFinderAfterDismissal: Bool = false
     private var whitelistAppNames: [String: String] = [:]
 
-    /// 初始化面板配置、运行状态订阅及用户操作回调。
+    /// 初始化面板配置、运行状态订阅、用户操作回调及应用名称解析。
     init(
         config: QuitGuardConfig = .shared,
         blackList: BlackList = .this,
@@ -225,7 +226,8 @@ final class MenuPanelModel: ObservableObject {
         quitAction: @escaping () -> Void = { NSApplication.shared.terminate(nil) },
         runtimeStatus: QuitGuardRuntimeStatus = .tapDisabled,
         runtimeUpdates: AnyPublisher<QuitGuardRuntimeStatus, Never>? = nil,
-        recheckProtectionAction: @escaping () -> Void = {}
+        recheckProtectionAction: @escaping () -> Void = {},
+        appNameProvider: @escaping (String) -> String = { AppPickerItem(url: URL(fileURLWithPath: $0)).name }
     ) {
         self.config = config
         self.blackList = blackList
@@ -237,6 +239,7 @@ final class MenuPanelModel: ObservableObject {
         self.quitAction = quitAction
         self.runtimeStatus = runtimeStatus
         self.recheckProtectionAction = recheckProtectionAction
+        self.appNameProvider = appNameProvider
         self.loginStatus = autoLaunchStatus()
         self.doubleTapIntervalDraft = config.doubleTapInterval
         self.alertCloseTimeDraft = config.alertWindowCloseTime
@@ -247,7 +250,7 @@ final class MenuPanelModel: ObservableObject {
         self.appPickerItems = []
         self.filteredAppPickerItems = []
         self.whitelistAppNames = Dictionary(uniqueKeysWithValues: blackList.records.map { path in
-            (path, AppPickerItem(url: URL(fileURLWithPath: path)).name)
+            (path, appNameProvider(path))
         })
         bindWhitelist()
         runtimeUpdates?
@@ -472,7 +475,7 @@ private extension MenuPanelModel {
     func syncWhitelist(_ records: [String]) {
         let previousNames = whitelistAppNames
         whitelistAppNames = Dictionary(uniqueKeysWithValues: records.map { path in
-            (path, previousNames[path] ?? AppPickerItem(url: URL(fileURLWithPath: path)).name)
+            (path, previousNames[path] ?? appNameProvider(path))
         })
         whitelistItems = records
         refreshFilteredWhitelistItems()
@@ -877,6 +880,76 @@ private extension MenuInlineActionButton {
     }
 }
 
+extension MenuPanelModel {
+    /// 创建拥有独立内存存储、固定应用目录和模拟系统动作的交互预览模型。
+    static func preview() -> MenuPanelModel {
+        let apps = [
+            AppPickerItem(name: "示例浏览器", path: "/PreviewApplications/Browser.app"),
+            AppPickerItem(name: "示例编辑器", path: "/PreviewApplications/Editor.app"),
+            AppPickerItem(name: "示例终端", path: "/PreviewApplications/Terminal.app")
+        ]
+        let names = Dictionary(uniqueKeysWithValues: apps.map { ($0.path, $0.name) })
+        var loginEnabled = false
+        return MenuPanelModel(
+            config: QuitGuardConfig(store: MenuPreviewSettingsStore()),
+            blackList: BlackList(store: MenuPreviewWhitelistStore(records: [apps[0].path]), canonicalPath: { $0 }),
+            appCatalog: MenuPreviewAppCatalog(items: apps),
+            systemAppPicker: MenuPreviewSystemAppPicker(url: URL(fileURLWithPath: apps[1].path)),
+            autoLaunchStatus: { loginEnabled ? .enabled : .notRegistered },
+            setAutoLaunch: { loginEnabled = $0 },
+            quitAction: {},
+            runtimeStatus: .ready,
+            recheckProtectionAction: {},
+            appNameProvider: { path in names[path] ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent }
+        )
+    }
+}
+
+/// 在预览实例的内存中保存时间设置。
+private final class MenuPreviewSettingsStore: QuitGuardSettingsStoring {
+    private var settings: QuitGuardSettings = .defaultValue
+
+    /// 读取当前预览保存的时间设置。
+    func load() -> QuitGuardSettings { settings }
+
+    /// 保存由退出保护配置校验后的预览设置。
+    func save(_ settings: QuitGuardSettings) { self.settings = settings }
+}
+
+/// 在预览实例的内存中保存白名单。
+private final class MenuPreviewWhitelistStore: WhitelistStoring {
+    let sourceName: String = "preview-memory"
+    private var records: [String]
+
+    /// 使用固定应用路径初始化预览白名单。
+    init(records: [String]) { self.records = records }
+
+    /// 返回当前预览的有效名单。
+    func loadResult() -> Result<[String]?, Error> { .success(records) }
+
+    /// 更新当前预览的候选名单并返回保存成功。
+    func save(_ records: [String]) -> Bool {
+        self.records = records
+        return true
+    }
+}
+
+/// 为应用选择器提供固定的预览应用条目。
+private struct MenuPreviewAppCatalog: InstalledAppCataloging {
+    let items: [AppPickerItem]
+
+    /// 返回固定应用样例，支持选择器搜索与刷新预览。
+    func loadApps(refresh: Bool) -> AppCatalogResult { AppCatalogResult(items: items) }
+}
+
+/// 为预览中的浏览操作提供固定选择结果。
+private struct MenuPreviewSystemAppPicker: SystemAppPicking {
+    let url: URL
+
+    /// 返回样例编辑器路径以模拟浏览选择成功。
+    func pickApp() -> URL? { url }
+}
+
 #Preview {
-    MenuShowView()
+    MenuShowView(model: .preview())
 }

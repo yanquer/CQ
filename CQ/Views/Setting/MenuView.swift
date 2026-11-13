@@ -154,5 +154,5 @@ struct MenuSettingValuePill: View {
 }
 
 #Preview {
-    GeneralSettingsSection(model: MenuPanelModel())
+    GeneralSettingsSection(model: .preview())
 }

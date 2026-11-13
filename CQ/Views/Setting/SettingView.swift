@@ -24,5 +24,5 @@ struct SettingView: View {
 }
 
 #Preview {
-    SettingView()
+    SettingView(model: .preview())
 }

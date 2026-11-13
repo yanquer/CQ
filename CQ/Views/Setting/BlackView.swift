@@ -427,5 +427,5 @@ struct MenuWhitelistEmptyState: View {
 }
 
 #Preview {
-    WhitelistSection(model: MenuPanelModel())
+    WhitelistSection(model: .preview())
 }
