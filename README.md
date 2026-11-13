@@ -62,6 +62,27 @@ CQ 是一个 macOS 菜单栏工具，用来拦截误触的 `Cmd + Q`。
 - 如果要定位退出保护问题，优先查看统一日志和上面的诊断文件，两边会输出同一套事件名：
   `launch_sync`、`wake_sync`、`manual_sync`、`permission_refresh`、`tap_create_attempt`、`tap_create_result`、`tap_disabled`、`tap_recovery_result`、`environment_diagnosed`
 
+### 本地安装与启动
+
+本地安装到 `/Applications/CQ.app` 后，使用以下命令后台启动。
+
+```sh
+open -g /Applications/CQ.app
+```
+
+`-g` 用于后台启动，`-j` 请求隐藏启动。2026-11-13 在 macOS 26.6.1、台前调度开启的同一台机器上，对两份签名 Release 安装包进行四轮邮件应用实测，结果如下。每轮均先退出 CQ，再安装并启动待测版本，并核对实际进程。
+
+| 版本 | `open -g` | `open -g -j` |
+| --- | --- | --- |
+| 加图标前 `97be7f0` | 提示正常显示 | 按键被拦截，提示未上屏 |
+| 加图标后 `6fcc419` | 提示正常显示 | 按键被拦截，提示未上屏 |
+
+用户反馈与窗口采样结果一致，两份安装包使用 `-j` 时均创建了提示窗口，窗口始终未进入屏幕。本次故障定位为安装时使用的隐藏启动参数，本地安装后统一使用上述 `open -g` 命令。
+
+此前对台前调度及 `7671a90` 的故障归因已更正。`7671a90` 引入了对应的非激活提示窗口配置，`97c06ae` 增加了跨应用窗口属性和诊断日志。首次验证后者时也同时移除了 `-j`，四轮对照进一步确认了启动参数的影响。
+
+遇到“有拦截、无提示”时，先核对启动方式、实际进程和运行产物，再查看统一日志 `com.yq.cq` / `util` 中的 `Tip presentation requested`、`Tip presentation prepared`、`Tip presentation skipped` 与 `Tip window ordered`。日志记录请求标识、目标进程、准备耗时、跳过原因及窗口状态。验证显示结果时结合用户实际观察与 `kCGWindowIsOnscreen` 采样，本次隐藏启动下也曾读取到应用 `isHidden=false`。
+
 ## 质量验收清单
 
 自动化覆盖见 [CQTests](CQTests/CQTests.swift)。测试使用隔离模型验证界面键盘操作与辅助功能，并通过离屏渲染检查布局；按键仅发送到测试窗口。无签名单测、离屏图像和本地临时签名检查都不代替正式签名包及真实系统授权验收。
