@@ -14,6 +14,39 @@ import SwiftUI
 @testable import CQ
 
 final class CQTests: XCTestCase {
+    /// 用隐藏状态栏控件验证实际入口配置提供名称、用途和菜单动作。
+    @MainActor
+    func testMenuBarButtonExposesAccessibleNameAndHelp() throws {
+        var temporaryIcon: NSImage?
+        if NSImage(named: "icon") == nil {
+            let icon = try XCTUnwrap(NSImage(systemSymbolName: "shield", accessibilityDescription: nil))
+            XCTAssertTrue(icon.setName("icon"))
+            temporaryIcon = icon
+        }
+        defer { temporaryIcon?.setName(nil) }
+        let delegate = makeAppDelegate(
+            permissionService: PermissionServiceSpy(currentAvailability: QuitGuardAvailability(isAccessibilityTrusted: true, hasListenEventAccess: true)),
+            runtimeStore: QuitGuardRuntimeStore(status: .ready),
+            tapSpy: TapControllerSpy()
+        )
+        delegate.configureMenuButton()
+        XCTAssertNil(delegate.statusItem)
+        let item = NSStatusBar.system.statusItem(withLength: 0)
+        item.isVisible = false
+        defer { NSStatusBar.system.removeStatusItem(item) }
+        delegate.statusItem = item
+        delegate.configureMenuButton()
+        let button = try XCTUnwrap(item.button)
+        XCTAssertEqual(button.accessibilityLabel(), "CQ 退出保护")
+        XCTAssertEqual(button.accessibilityHelp(), "打开退出保护设置")
+        XCTAssertEqual(button.title, "")
+        XCTAssertNotNil(button.image)
+        XCTAssertTrue(button.target === delegate)
+        XCTAssertEqual(button.action, #selector(AppDelegate.MenuButtonToggle(sender:)))
+        XCTAssertFalse(item.isVisible)
+        XCTAssertEqual(item.length, 0)
+    }
+
     /// 验证菜单处理器放行组字中的 Escape，结束组字后恢复普通关闭行为。
     @MainActor
     func testMenuEscapePreservesMarkedText() throws {

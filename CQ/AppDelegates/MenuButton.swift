@@ -166,11 +166,15 @@ extension AppDelegate {
     }
 }
 
-private extension AppDelegate {
+extension AppDelegate {
+    /// 配置菜单栏图标、辅助功能名称及打开设置的动作。
+    @MainActor
     func configureMenuButton() {
         guard let menuButton = statusItem?.button,
               let image = NSImage(named: "icon") else { return }
 
+        menuButton.setAccessibilityLabel("CQ 退出保护")
+        menuButton.setAccessibilityHelp("打开退出保护设置")
         image.isTemplate = false
         image.size = NSSize(width: 16, height: 16)
         menuButton.image = image
